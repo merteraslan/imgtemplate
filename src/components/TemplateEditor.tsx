@@ -1,13 +1,79 @@
 'use client';
 
+// Update Layer interfaces with discriminated unions
+type LayerType = 'text' | 'image' | 'shape';
+
+interface BaseLayer {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  visible: boolean;
+  borderWidth: number;
+  borderColor: string;
+  lockAspectRatio: boolean;
+  opacity: number;
+}
+
+interface TextLayer extends BaseLayer {
+  type: 'text';
+  text: string;
+  font: string;
+  size: number;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+  useBackground: boolean;
+  backgroundColor: string;
+  bgPadding: number;
+}
+
+interface ImageLayer extends BaseLayer {
+  type: 'image';
+  src: string;
+  useColorFill: boolean;
+  fillColor: string;
+}
+
+interface ShapeLayer extends BaseLayer {
+  type: 'shape';
+  fillColor: string;
+  strokeWidth: number;
+  strokeColor: string;
+}
+
+type Layer = TextLayer | ImageLayer | ShapeLayer;
+
+interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface DragOffset {
+  x: number;
+  y: number;
+}
+
+interface ResizeState {
+  handle: string;
+  initialX: number;
+  initialY: number;
+  initialWidth: number;
+  initialHeight: number;
+  aspectRatio: number;
+  layerId: string;
+}
+
 import React, {
   useState,
   useRef,
   useCallback,
   useEffect,
-  useLayoutEffect,
-  ChangeEvent,
-  FocusEvent
+  useLayoutEffect
 } from 'react';
 import { Card } from '@/components/ui/card';
 import {
@@ -26,74 +92,120 @@ import {
   Lock,
   Unlock
 } from 'lucide-react';
+import styles from './TemplateEditor.module.css';
 
 // ---------------------------------------------------------------------------
 // BoundingBox Component
 // If a custom bbox is passed (for text layers), it uses that for drawing.
-const BoundingBox = React.memo(
-  ({
-    layer,
-    onResizeStart,
-    bbox
-  }: {
-    layer: any;
-    onResizeStart: any;
-    bbox?: { x: number; y: number; width: number; height: number };
-  }) => {
-    const handleMouseDown = (e: React.MouseEvent, pos: string) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onResizeStart(e, layer, pos);
-    };
+interface BoundingBoxProps {
+  layer: Layer;
+  bbox?: BoundingBox;
+  onResizeStart: (e: React.MouseEvent, handle: string) => void;
+}
 
-    const box = bbox || {
-      x: layer.x,
-      y: layer.y,
-      width: layer.width || 100,
-      height: layer.height || 40
-    };
+const BoundingBox: React.FC<BoundingBoxProps> = ({ layer, bbox, onResizeStart }) => {
+  const handleMouseDown = (e: React.MouseEvent, pos: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onResizeStart(e, pos);
+  };
 
-    return (
-      <g>
-        <rect
-          x={box.x - 2}
-          y={box.y - 2}
-          width={box.width + 4}
-          height={box.height + 4}
-          fill="none"
-          stroke="#00F"
-          strokeWidth="1"
-          strokeDasharray="4"
-        />
-        {['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map((pos) => (
-          <circle
-            key={pos}
-            cx={
-              box.x +
-              (pos.includes('e')
-                ? box.width
-                : pos.includes('w')
-                ? 0
-                : box.width / 2)
-            }
-            cy={
-              box.y +
-              (pos.includes('s')
-                ? box.height
-                : pos.includes('n')
-                ? 0
-                : box.height / 2)
-            }
-            r="4"
-            fill="#00F"
-            style={{ cursor: `${pos}-resize`, userSelect: 'none' }}
-            onMouseDown={(e) => handleMouseDown(e, pos)}
-          />
-        ))}
-      </g>
-    );
-  }
-);
+  const box = bbox || {
+    x: typeof layer.x === 'number' ? layer.x : 0,
+    y: typeof layer.y === 'number' ? layer.y : 0,
+    width: typeof layer.width === 'number' ? layer.width : 0,
+    height: typeof layer.height === 'number' ? layer.height : 0
+  };
+
+  return (
+    <g className={styles.boundingBox}>
+      <rect
+        x={box.x - 2}
+        y={box.y - 2}
+        width={box.width + 4}
+        height={box.height + 4}
+        fill="none"
+        stroke="#00ff00"
+        strokeWidth={1}
+        strokeDasharray="4 4"
+      />
+      {/* Resize handles */}
+      <rect
+        x={box.x - 4}
+        y={box.y - 4}
+        width={8}
+        height={8}
+        fill="#00ff00"
+        onMouseDown={(e) => handleMouseDown(e, 'nw')}
+        className={styles.resizeHandle}
+      />
+      <rect
+        x={box.x + box.width - 4}
+        y={box.y - 4}
+        width={8}
+        height={8}
+        fill="#00ff00"
+        onMouseDown={(e) => handleMouseDown(e, 'ne')}
+        className={styles.resizeHandleNE}
+      />
+      <rect
+        x={box.x - 4}
+        y={box.y + box.height - 4}
+        width={8}
+        height={8}
+        fill="#00ff00"
+        onMouseDown={(e) => handleMouseDown(e, 'sw')}
+        className={styles.resizeHandleSW}
+      />
+      <rect
+        x={box.x + box.width - 4}
+        y={box.y + box.height - 4}
+        width={8}
+        height={8}
+        fill="#00ff00"
+        onMouseDown={(e) => handleMouseDown(e, 'se')}
+        className={styles.resizeHandleSE}
+      />
+      {/* Middle handles */}
+      <rect
+        x={box.x + box.width / 2 - 4}
+        y={box.y - 4}
+        width={8}
+        height={8}
+        fill="#00ff00"
+        onMouseDown={(e) => handleMouseDown(e, 'n')}
+        className={styles.resizeHandleN}
+      />
+      <rect
+        x={box.x + box.width / 2 - 4}
+        y={box.y + box.height - 4}
+        width={8}
+        height={8}
+        fill="#00ff00"
+        onMouseDown={(e) => handleMouseDown(e, 's')}
+        className={styles.resizeHandleS}
+      />
+      <rect
+        x={box.x - 4}
+        y={box.y + box.height / 2 - 4}
+        width={8}
+        height={8}
+        fill="#00ff00"
+        onMouseDown={(e) => handleMouseDown(e, 'w')}
+        className={styles.resizeHandleW}
+      />
+      <rect
+        x={box.x + box.width - 4}
+        y={box.y + box.height / 2 - 4}
+        width={8}
+        height={8}
+        fill="#00ff00"
+        onMouseDown={(e) => handleMouseDown(e, 'e')}
+        className={styles.resizeHandleE}
+      />
+    </g>
+  );
+};
 BoundingBox.displayName = 'BoundingBox';
 
 // ---------------------------------------------------------------------------
@@ -105,9 +217,9 @@ const TextLayer = ({
   onDragStart,
   updateBBox
 }: {
-  layer: any;
-  onDragStart: (e: React.MouseEvent, layer: any) => void;
-  updateBBox: (id: string, bbox: { x: number; y: number; width: number; height: number }) => void;
+  layer: TextLayer;
+  onDragStart: (e: React.MouseEvent, layer: Layer) => void;
+  updateBBox: (id: string, bbox: BoundingBox) => void;
 }) => {
   const textRef = useRef<SVGTextElement>(null);
 
@@ -116,28 +228,20 @@ const TextLayer = ({
       const bbox = textRef.current.getBBox();
       updateBBox(layer.id, bbox);
     }
-  }, [layer.text, layer.font, layer.size, layer.x, layer.y, layer.italic, layer.bold]);
+  }, [layer.id, layer.text, layer.font, layer.size, layer.x, layer.y, layer.italic, layer.bold, updateBBox]);
 
   return (
     <text
       ref={textRef}
-      x={Math.round(layer.x)}
-      // Adjust y so the text baseline is roughly centered vertically
-      y={Math.round(layer.y + layer.height * 0.7)}
-      fontFamily={layer.font}
+      x={layer.x}
+      y={layer.y}
       fontSize={layer.size}
+      fontFamily={layer.font}
       fill={layer.color}
-      style={{
-        cursor: 'move',
-        userSelect: 'none',
-        fontStyle: layer.italic ? 'italic' : 'normal',
-        fontWeight: layer.bold ? 'bold' : 'normal'
-      }}
-      opacity={layer.opacity ?? 1}
-      onMouseDown={(e) => {
-        e.preventDefault();
-        onDragStart(e, layer);
-      }}
+      className={styles.textLayer}
+      fontWeight={layer.bold ? 'bold' : 'normal'}
+      fontStyle={layer.italic ? 'italic' : 'normal'}
+      onMouseDown={(e) => onDragStart(e, layer)}
     >
       {layer.text}
     </text>
@@ -191,29 +295,44 @@ const canvasPresets = [
 ];
 
 // Helper function to generate unique layer names
-const getUniqueLayerName = (prevLayers: any[], type: string): string => {
-  const base = type === 'text' ? 'New Text' : 'New Image';
-  const names = prevLayers.map((l) => l.name);
-  if (!names.includes(base)) return base;
-  let index = 2;
-  while (names.includes(`${base} ${index}`)) {
-    index++;
+const getUniqueLayerName = (prevLayers: Layer[], type: LayerType): string => {
+  const basePrefix = type.charAt(0).toUpperCase() + type.slice(1);
+  let counter = 1;
+  let name = `${basePrefix} ${counter}`;
+  while (prevLayers.some((l) => l.name === name)) {
+    counter++;
+    name = `${basePrefix} ${counter}`;
   }
-  return `${base} ${index}`;
+  return name;
 };
 
+interface TemplateData {
+  layers?: Layer[];
+  width?: number;
+  height?: number;
+}
+
 interface TemplateEditorProps {
-  jsonData?: any;
+  width?: number;
+  height?: number;
+  onLayerSelect?: (layer: Layer | null) => void;
+  onLayersChange?: (layers: Layer[]) => void;
+  jsonData?: TemplateData;
   renderOnly?: boolean;
 }
 
-const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly }) => {
+const TemplateEditor: React.FC<TemplateEditorProps> = ({
+  width = 1080,
+  height = 1080,
+  jsonData,
+  renderOnly
+}) => {
   // ---------------------------------------------------------------------------
   // Canvas Settings – starting as an Instagram post
-  const [canvasWidth, setCanvasWidth] = useState<number>(1080);
-  const [canvasHeight, setCanvasHeight] = useState<number>(1080);
-  const [canvasWidthInput, setCanvasWidthInput] = useState<string>('1080');
-  const [canvasHeightInput, setCanvasHeightInput] = useState<string>('1080');
+  const [canvasWidth, setCanvasWidth] = useState<number>(jsonData?.width || width);
+  const [canvasHeight, setCanvasHeight] = useState<number>(jsonData?.height || height);
+  const [canvasWidthInput, setCanvasWidthInput] = useState<string>(String(jsonData?.width || width));
+  const [canvasHeightInput, setCanvasHeightInput] = useState<string>(String(jsonData?.height || height));
   const [preset, setPreset] = useState<string>('1080x1080');
 
   // Zoom state for preview pane – start zoomed out to avoid scrollbars
@@ -222,91 +341,51 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
   // ---------------------------------------------------------------------------
   // Sample project state for an Instagram post.
   // The background layer is pushed to the bottom and uses the provided Unsplash URL.
-  const [layers, setLayers] = useState<any>(jsonData?.layers || [
+  const initialLayers: Layer[] = jsonData?.layers || [
     {
       id: 'layer_2',
       type: 'text',
-      name: 'Title',
-      text: 'Sample Title',
-      font: 'Helvetica',
-      size: 60,
-      color: '#333333',
-      x: 50,
-      y: 50,
-      width: 980,
-      height: 100,
+      name: 'New Text',
+      text: 'New Text',
+      font: 'Arial',
+      size: 36,
+      color: '#000000',
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 40,
       visible: true,
-      opacity: 1,
-      bold: true,
-      italic: false,
-      useBackground: true,
-      backgroundColor: '#ffffff',
-      bgPadding: 8,
-      borderWidth: 2,
-      borderColor: '#333333',
-      lockAspectRatio: true
-    },
-    {
-      id: 'layer_4',
-      type: 'text',
-      name: 'Caption',
-      text: 'This is a caption',
-      font: 'Times New Roman',
-      size: 72,
-      color: '#00f004',
-      x: 79,
-      y: 816,
-      width: 202,
-      height: 16,
-      visible: true,
-      opacity: 1,
-      italic: true,
       bold: false,
-      useBackground: true,
-      backgroundColor: '#850061',
-      bgPadding: 8,
+      italic: false,
+      useBackground: false,
+      backgroundColor: '#ffffff',
+      bgPadding: 4,
       borderWidth: 0,
-      borderColor: '#666666',
-      lockAspectRatio: true
-    },
-    {
-      id: 'layer_3',
-      type: 'image',
-      name: 'Sample Image',
-      useColorFill: true,
-      fillColor: '#c38cca',
-      x: 50,
-      y: 200,
-      width: 980,
-      height: 600,
-      visible: true,
-      opacity: 1,
-      borderWidth: 3,
-      borderColor: '#ffffff',
-      src: '',
-      lockAspectRatio: true
+      borderColor: '#000000',
+      lockAspectRatio: false,
+      opacity: 1
     },
     {
       id: 'layer_1',
       type: 'image',
-      name: 'Background',
-      useColorFill: false,
-      fillColor: '#e0e0e0',
-      x: 0,
-      y: 0,
-      width: 1080,
-      height: 1080,
+      name: 'New Image',
+      x: 100,
+      y: 200,
+      width: 200,
+      height: 200,
       visible: true,
-      opacity: 1,
+      src: '',
+      useColorFill: false,
+      fillColor: '#cccccc',
       borderWidth: 0,
       borderColor: '#000000',
-      // Use the provided background image URL
-      src: 'https://unsplash.com/photos/kLOuJrm-Wnk/download?ixid=M3wxMjA3fDB8MXxhbGx8MTB8fHx8fHx8fDE3MzkyNDI5Mzd8&force=true&w=1920.png',
-      lockAspectRatio: true
+      lockAspectRatio: true,
+      opacity: 1
     }
-  ]);
+  ];
+  const [layers, setLayers] = useState<Layer[]>(initialLayers);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
-  const selectedLayer = layers.find((l: any) => l.id === selectedLayerId);
+  const selectedLayer = layers.find((l: Layer) => l.id === selectedLayerId);
 
   // New state for aligning with another layer
   const [alignTargetLayerId, setAlignTargetLayerId] = useState<string>('');
@@ -322,19 +401,19 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
   useEffect(() => {
     if (selectedLayer) {
       setLayerWidthInput(String(Math.round(selectedLayer.width)));
-      setLayerHeightInput(String(Math.round(selectedLayer.height)));
+      setLayerHeightInput(String(Math.round(typeof selectedLayer.height === 'number' ? selectedLayer.height : 0)));
       setLayerXInput(String(Math.round(selectedLayer.x)));
-      setLayerYInput(String(Math.round(selectedLayer.y)));
+      setLayerYInput(String(Math.round(typeof selectedLayer.y === 'number' ? selectedLayer.y : 0)));
     }
   }, [selectedLayer]);
 
   // ---------------------------------------------------------------------------
   // State for measured bounding boxes of text layers
   const [textBBoxes, setTextBBoxes] = useState<{
-    [id: string]: { x: number; y: number; width: number; height: number };
+    [id: string]: BoundingBox;
   }>({});
   const updateTextBBox = useCallback(
-    (id: string, bbox: { x: number; y: number; width: number; height: number }) => {
+    (id: string, bbox: BoundingBox) => {
       setTextBBoxes((prev) => ({ ...prev, [id]: bbox }));
     },
     []
@@ -342,10 +421,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
 
   // ---------------------------------------------------------------------------
   // Preview (canvas drag states)
-  const [draggedLayer, setDraggedLayer] = useState<any>(null);
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [draggedLayer, setDraggedLayer] = useState<Layer | null>(null);
+  const [dragOffset, setDragOffset] = useState<DragOffset>({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
-  const resizeTimeoutRef = useRef<any>(null);
+  const resizeTimeoutRef = useRef<number | null>(null);
 
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
   // (Note: We no longer use a JSON Import/Export pane in the sidebar.)
@@ -396,7 +475,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
     e.dataTransfer.effectAllowed = 'move';
   }, []);
   const handleContainerDragOver = useCallback(
-    (e: React.DragEvent) => {
+    (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       const computed = computeDropIndex(e.clientY);
       setDragOverIndex(computed);
@@ -408,7 +487,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
       e.preventDefault();
       const computed = computeDropIndex(e.clientY);
       if (draggedLayerIndex === null) return;
-      setLayers((prev: any[]) => {
+      setLayers((prev: Layer[]) => {
         const newLayers = [...prev];
         const [moved] = newLayers.splice(draggedLayerIndex, 1);
         let targetIndex = computed;
@@ -428,7 +507,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
   }, []);
   // ---------------------------------------------------------------------------
   // Canvas Drag for Preview
-  const handleDragStart = useCallback((e: React.MouseEvent, layer: any) => {
+  const handleDragStart = useCallback((e: React.MouseEvent, layer: Layer) => {
     if (!e.currentTarget.classList.contains('layer-item')) {
       if (!svgRef.current) return;
       const svg = svgRef.current;
@@ -438,8 +517,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
       const svgP = pt.matrixTransform(svg.getScreenCTM()?.inverse());
       setDraggedLayer(layer);
       setDragOffset({
-        x: svgP.x - layer.x,
-        y: svgP.y - layer.y
+        x: svgP.x - (typeof layer.x === 'number' ? layer.x : 0),
+        y: svgP.y - (typeof layer.y === 'number' ? layer.y : 0)
       });
       setSelectedLayerId(layer.id);
     }
@@ -452,10 +531,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
       pt.x = e.clientX;
       pt.y = e.clientY;
       const svgP = pt.matrixTransform(svg.getScreenCTM()?.inverse());
-      setLayers((prev: any[]) =>
+      setLayers((prev: Layer[]) =>
         prev.map((l) =>
           l.id === draggedLayer.id
-            ? { ...l, x: Math.round(svgP.x - dragOffset.x), y: Math.round(svgP.y - dragOffset.y) }
+            ? { ...l, x: Math.round(svgP.x - (typeof dragOffset.x === 'number' ? dragOffset.x : 0)), y: Math.round(svgP.y - (typeof dragOffset.y === 'number' ? dragOffset.y : 0)) }
             : l
         )
       );
@@ -463,23 +542,27 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
     [draggedLayer, dragOffset]
   );
   // New resizeState includes initial values and aspect ratio
-  const [resizeState, setResizeState] = useState<any>(null);
+  const [resizeState, setResizeState] = useState<ResizeState | null>(null);
   const handleResizeStart = useCallback(
-    (e: React.MouseEvent, layer: any, handle: string) => {
+    (e: React.MouseEvent, handle: string) => {
       e.preventDefault();
       e.stopPropagation();
+      const width = typeof selectedLayer?.width === 'number' ? selectedLayer.width : 0;
+      const height = typeof selectedLayer?.height === 'number' ? selectedLayer.height : 0;
+      const x = typeof selectedLayer?.x === 'number' ? selectedLayer.x : 0;
+      const y = typeof selectedLayer?.y === 'number' ? selectedLayer.y : 0;
       setResizeState({
-        layer,
         handle,
-        initialX: layer.x,
-        initialY: layer.y,
-        initialWidth: layer.width,
-        initialHeight: layer.height,
-        aspectRatio: layer.width / layer.height
+        initialX: x,
+        initialY: y,
+        initialWidth: width,
+        initialHeight: height,
+        aspectRatio: height !== 0 ? width / height : 1,
+        layerId: selectedLayer?.id || ''
       });
-      setSelectedLayerId(layer.id);
+      setSelectedLayerId(selectedLayer?.id || null);
     },
-    []
+    [selectedLayer]
   );
   const handleResizeMove = useCallback(
     (e: React.MouseEvent) => {
@@ -489,76 +572,54 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
       pt.x = e.clientX;
       pt.y = e.clientY;
       const svgP = pt.matrixTransform(svg.getScreenCTM()?.inverse());
-      const { layer, handle, initialX, initialY, initialWidth, initialHeight, aspectRatio } = resizeState;
-      setLayers((prev: any[]) =>
-        prev.map((l) => {
-          if (l.id !== layer.id) return l;
-          const newProps = { ...l };
-          if (l.lockAspectRatio) {
-            // Locked resizing using initial values
-            if (handle === 'e') {
-              newProps.width = Math.max(50, Math.round(svgP.x - initialX));
-              newProps.height = Math.round(newProps.width / aspectRatio);
-            } else if (handle === 'w') {
-              newProps.width = Math.max(50, Math.round(initialWidth + (initialX - svgP.x)));
-              newProps.height = Math.round(newProps.width / aspectRatio);
-              newProps.x = initialX + (initialWidth - newProps.width);
-            } else if (handle === 's') {
-              newProps.height = Math.max(20, Math.round(svgP.y - initialY));
-              newProps.width = Math.round(newProps.height * aspectRatio);
-            } else if (handle === 'n') {
-              newProps.height = Math.max(20, Math.round(initialHeight + (initialY - svgP.y)));
-              newProps.width = Math.round(newProps.height * aspectRatio);
-              newProps.y = initialY + (initialHeight - newProps.height);
-            } else if (handle === 'nw') {
-              newProps.width = Math.max(50, Math.round((initialX + initialWidth) - svgP.x));
-              newProps.height = Math.round(newProps.width / aspectRatio);
-              newProps.x = initialX + initialWidth - newProps.width;
-              newProps.y = initialY + initialHeight - newProps.height;
-            } else if (handle === 'ne') {
-              newProps.width = Math.max(50, Math.round(svgP.x - initialX));
-              newProps.height = Math.round(newProps.width / aspectRatio);
-              newProps.y = initialY + initialHeight - newProps.height;
-            } else if (handle === 'sw') {
-              newProps.width = Math.max(50, Math.round((initialX + initialWidth) - svgP.x));
-              newProps.height = Math.round(newProps.width / aspectRatio);
-              newProps.x = initialX + initialWidth - newProps.width;
-            } else if (handle === 'se') {
-              newProps.width = Math.max(50, Math.round(svgP.x - initialX));
-              newProps.height = Math.round(newProps.width / aspectRatio);
-            }
-          } else {
-            // Unlocked resizing using current values
-            const currentAspectRatio = l.width / l.height;
-            if (handle.includes('e')) {
-              newProps.width = Math.max(50, Math.round(svgP.x - l.x));
-              if (handle === 'e') newProps.height = Math.round(newProps.width / currentAspectRatio);
-            }
-            if (handle.includes('w')) {
-              const diff = l.x - svgP.x;
-              newProps.x = Math.round(svgP.x);
-              newProps.width = Math.max(50, Math.round(l.width + diff));
-              if (handle === 'w') newProps.height = Math.round(newProps.width / currentAspectRatio);
-            }
-            if (handle.includes('s')) {
-              newProps.height = Math.max(20, Math.round(svgP.y - l.y));
-              if (handle === 's') newProps.width = Math.round(newProps.height * currentAspectRatio);
-            }
-            if (handle.includes('n')) {
-              const diff = l.y - svgP.y;
-              newProps.y = Math.round(svgP.y);
-              newProps.height = Math.max(20, Math.round(l.height + diff));
-              if (handle === 'n') newProps.width = Math.round(newProps.height * currentAspectRatio);
-            }
+      const { handle, initialX, initialY, initialWidth, initialHeight, aspectRatio, layerId } = resizeState;
+      setLayers((prev: Layer[]) =>
+        prev.map((layer) => {
+          if (layer.id !== layerId) return layer;
+          
+          // Calculate new dimensions
+          let deltaX = 0;
+          let deltaY = 0;
+          let newWidth = initialWidth;
+          let newHeight = initialHeight;
+          
+          switch (handle) {
+            case 'top-left':
+              deltaX = svgP.x - initialX;
+              deltaY = svgP.y - initialY;
+              newWidth = initialWidth - deltaX;
+              newHeight = layer.lockAspectRatio ? newWidth / aspectRatio : initialHeight - deltaY;
+              break;
+            case 'top-right':
+              deltaY = svgP.y - initialY;
+              newWidth = svgP.x - initialX;
+              newHeight = layer.lockAspectRatio ? newWidth / aspectRatio : initialHeight - deltaY;
+              break;
+            case 'bottom-left':
+              deltaX = svgP.x - initialX;
+              newWidth = initialWidth - deltaX;
+              newHeight = layer.lockAspectRatio ? newWidth / aspectRatio : svgP.y - initialY;
+              break;
+            case 'bottom-right':
+              newWidth = svgP.x - initialX;
+              newHeight = layer.lockAspectRatio ? newWidth / aspectRatio : svgP.y - initialY;
+              break;
           }
-          if (l.type === 'text') {
-            newProps.size = Math.max(12, Math.round(newProps.width / 2));
-          }
-          newProps.x = Math.round(newProps.x);
-          newProps.y = Math.round(newProps.y);
-          newProps.width = Math.round(newProps.width);
-          newProps.height = Math.round(newProps.height);
-          return newProps;
+          
+          // Ensure minimum dimensions
+          newWidth = Math.max(newWidth, 10);
+          newHeight = Math.max(newHeight, 10);
+          
+          // Create new layer with updated properties
+          const updatedLayer: Layer = {
+            ...layer,
+            width: newWidth,
+            height: newHeight,
+            x: layer.x + (handle.includes('left') ? deltaX : 0),
+            y: layer.y + (handle.includes('top') ? deltaY : 0)
+          };
+          
+          return updatedLayer;
         })
       );
     },
@@ -574,48 +635,78 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
   // ---------------------------------------------------------------------------
   // New Layer Addition & Renaming with unique names
   const addNewLayer = useCallback(
-    (type: string) => {
-      setLayers((prev: any[]) => {
+    (type: LayerType) => {
+      setLayers((prev: Layer[]) => {
         const name = getUniqueLayerName(prev, type);
-        const newLayer = {
+        const baseLayer = {
           id: `layer_${Date.now()}`,
-          type,
           name,
-          text: type === 'text' ? 'New Text' : '',
-          font: 'Arial',
-          size: type === 'text' ? 36 : 0,
-          color: '#FFFFFF',
           x: 100,
           y: 100,
-          width: type === 'text' ? 100 : 200,
-          height: type === 'text' ? 40 : 200,
           visible: true,
-          opacity: 1,
           borderWidth: 0,
           borderColor: '#000000',
-          lockAspectRatio: true,
-          ...(type === 'image' && { src: '', useColorFill: false, fillColor: '#CCCCCC' }),
-          ...(type === 'text' && {
-            bold: false,
-            italic: false,
-            useBackground: false,
-            backgroundColor: '#000000',
-            bgPadding: 4
-          })
+          lockAspectRatio: false,
+          opacity: 1
         };
+
+        let newLayer: Layer;
+        switch (type) {
+          case 'text':
+            newLayer = {
+              ...baseLayer,
+              type: 'text',
+              width: 200,
+              height: 40,
+              text: 'New Text',
+              font: 'Arial',
+              size: 36,
+              color: '#000000',
+              bold: false,
+              italic: false,
+              useBackground: false,
+              backgroundColor: '#ffffff',
+              bgPadding: 4
+            };
+            break;
+          case 'image':
+            newLayer = {
+              ...baseLayer,
+              type: 'image',
+              width: 200,
+              height: 200,
+              src: '',
+              useColorFill: false,
+              fillColor: '#cccccc'
+            };
+            break;
+          case 'shape':
+            newLayer = {
+              ...baseLayer,
+              type: 'shape',
+              width: 100,
+              height: 100,
+              fillColor: '#cccccc',
+              strokeWidth: 2,
+              strokeColor: '#000000'
+            };
+            break;
+        }
+
         return [newLayer, ...prev];
       });
     },
     []
   );
   // Duplicate Layer function
-  const duplicateLayer = useCallback((layer: any) => {
-    setLayers((prev: any[]) => {
+  const duplicateLayer = useCallback((layer: Layer) => {
+    setLayers((prev: Layer[]) => {
       const newName = getUniqueLayerName(prev, layer.type);
-      const newLayer = { ...layer, id: `layer_${Date.now()}`, name: newName };
+      const newLayer: Layer = { ...layer, id: `layer_${Date.now()}`, name: newName };
       return [newLayer, ...prev];
     });
   }, []);
+
   // ---------------------------------------------------------------------------
   // Local state for layer name editing to prevent duplicates
   const [layerNameInput, setLayerNameInput] = useState<string>(
@@ -633,7 +724,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
   // Instead, we add an Import button in the preview toolbar.
   const importFileRef = useRef<HTMLInputElement>(null);
   const handleImportFile = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
         const reader = new FileReader();
@@ -650,7 +741,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
               setCanvasHeightInput(String(data.canvasHeight));
             }
             if (data.backgroundImage) setBackgroundImage(data.backgroundImage);
-          } catch (err) {
+          } catch {
             alert('Invalid JSON file.');
           }
         };
@@ -661,11 +752,11 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
   );
   // ---------------------------------------------------------------------------
   // JSON Export remains for the Export button
-  const exportPlaceholderData = {
+  const exportPlaceholderData = useCallback(() => ({
     canvasWidth,
     canvasHeight,
     backgroundImage: backgroundImage ? '[Background Image]' : null,
-    layers: layers.map((layer: any) => {
+    layers: layers.map((layer: Layer) => {
       if (layer.type === 'image') {
         return {
           ...layer,
@@ -674,10 +765,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
       }
       return layer;
     })
-  };
-  const jsonPlaceholder = JSON.stringify(exportPlaceholderData, null, 2);
+  }), [canvasWidth, canvasHeight, layers, backgroundImage]);
   const handleExport = useCallback(() => {
-    const exportData = JSON.stringify(exportPlaceholderData, null, 2);
+    const exportData = JSON.stringify(exportPlaceholderData(), null, 2);
     const blob = new Blob([exportData], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -733,10 +823,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
     img.src = url;
   }, [canvasWidth, canvasHeight]);
   // Handlers for canvas width/height input
-  const handleCanvasWidthChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleCanvasWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCanvasWidthInput(e.target.value);
   };
-  const handleCanvasWidthBlur = (e: FocusEvent<HTMLInputElement>) => {
+  const handleCanvasWidthBlur = () => {
     const parsed = parseInt(canvasWidthInput, 10);
     if (!isNaN(parsed) && parsed > 0) {
       setCanvasWidth(parsed);
@@ -745,10 +835,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
       setCanvasWidthInput(String(canvasWidth));
     }
   };
-  const handleCanvasHeightChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleCanvasHeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCanvasHeightInput(e.target.value);
   };
-  const handleCanvasHeightBlur = (e: FocusEvent<HTMLInputElement>) => {
+  const handleCanvasHeightBlur = () => {
     const parsed = parseInt(canvasHeightInput, 10);
     if (!isNaN(parsed) && parsed > 0) {
       setCanvasHeight(parsed);
@@ -758,25 +848,28 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
     }
   };
   // Handler for preset selection
-  const handlePresetChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value;
-    setPreset(value);
-    if (value) {
-      const [w, h] = value.split('x').map((v) => parseInt(v, 10));
-      if (!isNaN(w) && !isNaN(h)) {
-        setCanvasWidth(w);
-        setCanvasHeight(h);
-        setCanvasWidthInput(String(w));
-        setCanvasHeightInput(String(h));
+  const handlePresetChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = e.target.value;
+      setPreset(value);
+      if (value) {
+        const [w, h] = value.split('x').map((v) => parseInt(v, 10));
+        if (!isNaN(w) && !isNaN(h)) {
+          setCanvasWidth(w);
+          setCanvasHeight(h);
+          setCanvasWidthInput(String(w));
+          setCanvasHeightInput(String(h));
+        }
       }
-    }
-  };
+    },
+    []
+  );
 
   // ---------------------------------------------------------------------------
   // Helper functions for Alignment
   // getLayerBBox returns the measured bounding box for text layers (if available)
   // or the stored values for other layers.
-  const getLayerBBox = (layer: any) => {
+  const getLayerBBox = (layer: Layer) => {
     if (layer.type === 'text' && textBBoxes[layer.id]) {
       return textBBoxes[layer.id];
     }
@@ -788,7 +881,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
     const selectedBBox = getLayerBBox(selectedLayer);
     let targetBBox;
     if (alignTargetLayerId) {
-      const targetLayer = layers.find((l: any) => l.id === alignTargetLayerId);
+      const targetLayer = layers.find((l: Layer) => l.id === alignTargetLayerId);
       if (!targetLayer) return;
       targetBBox = getLayerBBox(targetLayer);
     } else {
@@ -803,7 +896,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
     } else if (direction === 'right') {
       deltaX = (targetBBox.x + targetBBox.width) - (selectedBBox.x + selectedBBox.width);
     }
-    setLayers((prev) =>
+    setLayers((prev: Layer[]) =>
       prev.map((l) =>
         l.id === selectedLayer.id ? { ...l, x: Math.round(l.x + deltaX) } : l
       )
@@ -815,7 +908,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
     const selectedBBox = getLayerBBox(selectedLayer);
     let targetBBox;
     if (alignTargetLayerId) {
-      const targetLayer = layers.find((l: any) => l.id === alignTargetLayerId);
+      const targetLayer = layers.find((l: Layer) => l.id === alignTargetLayerId);
       if (!targetLayer) return;
       targetBBox = getLayerBBox(targetLayer);
     } else {
@@ -830,7 +923,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
     } else if (direction === 'bottom') {
       deltaY = (targetBBox.y + targetBBox.height) - (selectedBBox.y + selectedBBox.height);
     }
-    setLayers((prev) =>
+    setLayers((prev: Layer[]) =>
       prev.map((l) =>
         l.id === selectedLayer.id ? { ...l, y: Math.round(l.y + deltaY) } : l
       )
@@ -847,16 +940,17 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
         <div className="mb-4">
           <label className="block text-sm font-medium">Align With</label>
           <select
+            aria-label="Select parent layer"
             value={alignTargetLayerId}
             onChange={(e) => setAlignTargetLayerId(e.target.value)}
             className="mt-1 block w-full border-gray-300 rounded-md"
           >
             <option value="">Canvas</option>
             {layers
-              .filter((l: any) => l.id !== selectedLayer.id)
-              .map((l: any) => (
+              .filter((l: Layer) => l.id !== selectedLayer.id)
+              .map((l: Layer) => (
                 <option key={l.id} value={l.id}>
-                  {l.name || l.text || l.id}
+                  {l.name || (l.type === 'text' ? l.text : '') || l.id}
                 </option>
               ))}
           </select>
@@ -957,7 +1051,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
           width={canvasWidth}
           height={canvasHeight}
           viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
-          className="border"
+          className={styles.svgCanvas}
+          style={{ transform: `scale(${zoom})` }}
         >
           {backgroundImage ? (
             <image
@@ -972,8 +1067,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
           {layers
             .slice()
             .reverse()
-            .filter((l: any) => l.visible)
-            .map((layer: any) => (
+            .filter((l: Layer) => l.visible)
+            .map((layer: Layer) => (
               <g key={layer.id}>
                 {layer.type === 'text' ? (
                   <>
@@ -1069,6 +1164,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
           <div className="mb-2">
             <label className="block text-sm font-medium">Template Presets</label>
             <select
+              aria-label="Select preset size"
               value={preset}
               onChange={handlePresetChange}
               className="mt-1 block w-full border-gray-300 rounded-md"
@@ -1083,6 +1179,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
           <div className="mb-2">
             <label className="block text-sm font-medium">Canvas Width</label>
             <input
+              aria-label="Canvas width"
+              title="Canvas width in pixels"
               type="number"
               value={canvasWidthInput}
               onChange={handleCanvasWidthChange}
@@ -1093,6 +1191,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
           <div className="mb-2">
             <label className="block text-sm font-medium">Canvas Height</label>
             <input
+              aria-label="Canvas height"
+              title="Canvas height in pixels"
               type="number"
               value={canvasHeightInput}
               onChange={handleCanvasHeightChange}
@@ -1129,7 +1229,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
             onDragLeave={handleContainerDragLeave}
             className="relative space-y-2"
           >
-            {layers.map((layer: any, index: number) => (
+            {layers.map((layer: Layer, index: number) => (
               <div key={layer.id} className="layer-item-wrapper">
                 <div
                   className="flex justify-between items-center w-full p-2 rounded transition-all duration-100 cursor-pointer hover:bg-gray-100"
@@ -1144,7 +1244,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setLayers((prev: any[]) =>
+                        setLayers((prev: Layer[]) =>
                           prev.map((l) =>
                             l.id === layer.id ? { ...l, visible: !l.visible } : l
                           )
@@ -1156,7 +1256,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                       {layer.visible ? '👁️' : '👁️‍🗨️'}
                     </button>
                     {layer.type === 'text' ? <Type size={16} /> : <ImageIcon size={16} />}
-                    <span className="truncate">{layer.name || layer.text || layer.id}</span>
+                    <span className="truncate">{layer.name || (layer.type === 'text' ? layer.text : '') || layer.id}</span>
                   </div>
                   {/* Right section: duplicate and delete buttons */}
                   <div className="flex items-center space-x-2 flex-shrink-0">
@@ -1174,7 +1274,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                       onClick={(e) => {
                         e.stopPropagation();
                         if (confirm('Are you sure you want to delete this layer?')) {
-                          setLayers((prev: any[]) => prev.filter((l) => l.id !== layer.id));
+                          setLayers((prev: Layer[]) => prev.filter((l) => l.id !== layer.id));
                           if (selectedLayerId === layer.id) setSelectedLayerId(null);
                         }
                       }}
@@ -1260,142 +1360,143 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                 PNG
               </button>
               <input
+                aria-label="Import file"
+                title="Import template file"
+                ref={importFileRef}
                 type="file"
                 accept="application/json"
-                ref={importFileRef}
+                className={styles.hiddenInput}
                 onChange={handleImportFile}
-                style={{ display: 'none' }}
               />
             </div>
           </div>
-          <div
-            className="border"
-            style={{ width: '1080px', height: '1080px', overflow: 'hidden' }}
-          >
-            <svg
-              ref={svgRef}
-              width={canvasWidth}
-              height={canvasHeight}
-              viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
-              style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
-              className="border"
-              onMouseMove={(e) => {
-                handleDrag(e);
-                handleResizeMove(e);
-              }}
-              onMouseUp={() => {
-                handleDragEnd();
-                setResizeState(null);
-              }}
-              onMouseLeave={() => {
-                handleDragEnd();
-                setResizeState(null);
-              }}
-            >
-              {backgroundImage ? (
-                <image
-                  href={backgroundImage}
-                  width={canvasWidth}
-                  height={canvasHeight}
-                  preserveAspectRatio="xMidYMid slice"
-                />
-              ) : (
-                <rect width={canvasWidth} height={canvasHeight} fill="#f0f0f0" />
-              )}
-              {layers
-                .slice()
-                .reverse()
-                .filter((l: any) => l.visible)
-                .map((layer: any) => (
-                  <g key={layer.id}>
-                    {layer.type === 'text' ? (
-                      <>
-                        {layer.useBackground && textBBoxes[layer.id] && (
-                          <rect
-                            x={textBBoxes[layer.id].x - layer.bgPadding}
-                            y={textBBoxes[layer.id].y - layer.bgPadding}
-                            width={textBBoxes[layer.id].width + 2 * layer.bgPadding}
-                            height={textBBoxes[layer.id].height + 2 * layer.bgPadding}
-                            fill={layer.backgroundColor}
-                            opacity={layer.opacity ?? 1}
-                          />
-                        )}
-                        <TextLayer
-                          layer={layer}
-                          onDragStart={handleDragStart}
-                          updateBBox={updateTextBBox}
-                        />
-                        {layer.borderWidth > 0 && textBBoxes[layer.id] && (
-                          <rect
-                            x={textBBoxes[layer.id].x}
-                            y={textBBoxes[layer.id].y}
-                            width={textBBoxes[layer.id].width}
-                            height={textBBoxes[layer.id].height}
-                            fill="none"
-                            stroke={layer.borderColor}
-                            strokeWidth={layer.borderWidth}
-                          />
-                        )}
-                        {selectedLayerId === layer.id && (
-                          <BoundingBox
+          <div className={styles.previewContainer}>
+            <div className={styles.svgContainer}>
+              <svg
+                ref={svgRef}
+                width={canvasWidth}
+                height={canvasHeight}
+                viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+                className={styles.svgCanvas}
+                style={{ transform: `scale(${zoom})` }}
+                onMouseMove={(e) => {
+                  handleDrag(e);
+                  handleResizeMove(e);
+                }}
+                onMouseUp={() => {
+                  handleDragEnd();
+                  setResizeState(null);
+                }}
+                onMouseLeave={() => {
+                  handleDragEnd();
+                  setResizeState(null);
+                }}
+              >
+                {backgroundImage ? (
+                  <image
+                    href={backgroundImage}
+                    width={canvasWidth}
+                    height={canvasHeight}
+                    preserveAspectRatio="xMidYMid slice"
+                  />
+                ) : (
+                  <rect width={canvasWidth} height={canvasHeight} fill="#f0f0f0" />
+                )}
+                {layers
+                  .slice()
+                  .reverse()
+                  .filter((l: Layer) => l.visible)
+                  .map((layer: Layer) => (
+                    <g key={layer.id}>
+                      {layer.type === 'text' ? (
+                        <>
+                          {layer.useBackground && textBBoxes[layer.id] && (
+                            <rect
+                              x={textBBoxes[layer.id].x - layer.bgPadding}
+                              y={textBBoxes[layer.id].y - layer.bgPadding}
+                              width={textBBoxes[layer.id].width + 2 * layer.bgPadding}
+                              height={textBBoxes[layer.id].height + 2 * layer.bgPadding}
+                              fill={layer.backgroundColor}
+                              opacity={layer.opacity ?? 1}
+                            />
+                          )}
+                          <TextLayer
                             layer={layer}
-                            onResizeStart={handleResizeStart}
-                            bbox={textBBoxes[layer.id]}
+                            onDragStart={handleDragStart}
+                            updateBBox={updateTextBBox}
                           />
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {layer.type === 'image' &&
-                          (layer.useColorFill ? (
+                          {layer.borderWidth > 0 && textBBoxes[layer.id] && (
+                            <rect
+                              x={textBBoxes[layer.id].x}
+                              y={textBBoxes[layer.id].y}
+                              width={textBBoxes[layer.id].width}
+                              height={textBBoxes[layer.id].height}
+                              fill="none"
+                              stroke={layer.borderColor}
+                              strokeWidth={layer.borderWidth}
+                            />
+                          )}
+                          {selectedLayerId === layer.id && (
+                            <BoundingBox
+                              layer={layer}
+                              onResizeStart={handleResizeStart}
+                              bbox={textBBoxes[layer.id]}
+                            />
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {layer.type === 'image' &&
+                            (layer.useColorFill ? (
+                              <rect
+                                x={layer.x}
+                                y={layer.y}
+                                width={layer.width}
+                                height={layer.height}
+                                fill={layer.fillColor}
+                                className={styles.movableElement}
+                                opacity={layer.opacity ?? 1}
+                                onMouseDown={(e) => handleDragStart(e, layer)}
+                              />
+                            ) : (
+                              layer.src && (
+                                <image
+                                  href={layer.src}
+                                  x={layer.x}
+                                  y={layer.y}
+                                  width={layer.width}
+                                  height={layer.height}
+                                  preserveAspectRatio={
+                                    layer.src && !layer.src.startsWith('data:')
+                                      ? 'none'
+                                      : 'xMidYMid meet'
+                                  }
+                                  className={styles.imagePreview}
+                                  opacity={layer.opacity ?? 1}
+                                  onMouseDown={(e) => handleDragStart(e, layer)}
+                                />
+                              )
+                            ))}
+                          {layer.borderWidth > 0 && (
                             <rect
                               x={layer.x}
                               y={layer.y}
                               width={layer.width}
                               height={layer.height}
-                              fill={layer.fillColor}
-                              style={{ cursor: 'move' }}
-                              opacity={layer.opacity ?? 1}
-                              onMouseDown={(e) => handleDragStart(e, layer)}
+                              fill="none"
+                              stroke={layer.borderColor}
+                              strokeWidth={layer.borderWidth}
                             />
-                          ) : (
-                            layer.src && (
-                              <image
-                                href={layer.src}
-                                x={layer.x}
-                                y={layer.y}
-                                width={layer.width}
-                                height={layer.height}
-                                preserveAspectRatio={
-                                  layer.src && !layer.src.startsWith('data:')
-                                    ? 'none'
-                                    : 'xMidYMid meet'
-                                }
-                                style={{ cursor: 'move' }}
-                                opacity={layer.opacity ?? 1}
-                                onMouseDown={(e) => handleDragStart(e, layer)}
-                              />
-                            )
-                          ))}
-                        {layer.borderWidth > 0 && (
-                          <rect
-                            x={layer.x}
-                            y={layer.y}
-                            width={layer.width}
-                            height={layer.height}
-                            fill="none"
-                            stroke={layer.borderColor}
-                            strokeWidth={layer.borderWidth}
-                          />
-                        )}
-                        {selectedLayerId === layer.id && (
-                          <BoundingBox layer={layer} onResizeStart={handleResizeStart} />
-                        )}
-                      </>
-                    )}
-                  </g>
-                ))}
-            </svg>
+                          )}
+                          {selectedLayerId === layer.id && (
+                            <BoundingBox layer={layer} onResizeStart={handleResizeStart} />
+                          )}
+                        </>
+                      )}
+                    </g>
+                  ))}
+              </svg>
+            </div>
           </div>
         </Card>
       </div>
@@ -1403,7 +1504,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
       <div className="w-64 flex-shrink-0">
         {selectedLayer ? (
           <Card className="p-4">
-            <h3 className="text-lg font-bold mb-2">Layer Properties</h3>
+            <h3 className="text-lg font-bold">Layer Properties</h3>
             <div className="mb-2">
               <label className="block text-sm font-medium">Layer Name</label>
               <input
@@ -1412,13 +1513,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                 onChange={(e) => setLayerNameInput(e.target.value)}
                 onBlur={() => {
                   const duplicate = layers.find(
-                    (l: any) => l.name === layerNameInput && l.id !== selectedLayer.id
+                    (l: Layer) => l.name === layerNameInput && l.id !== selectedLayer.id
                   );
                   if (duplicate) {
                     alert('Error: A layer with that name already exists.');
                     setLayerNameInput(originalLayerNameRef.current);
                   } else {
-                    setLayers((prev: any[]) =>
+                    setLayers((prev: Layer[]) =>
                       prev.map((l) =>
                         l.id === selectedLayer.id ? { ...l, name: layerNameInput } : l
                       )
@@ -1426,6 +1527,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                     originalLayerNameRef.current = layerNameInput;
                   }
                 }}
+                aria-label="Layer name"
                 className="mt-1 block w-full border-gray-300 rounded-md"
               />
             </div>
@@ -1438,12 +1540,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                     value={selectedLayer.text}
                     onChange={(e) => {
                       const newText = e.target.value;
-                      setLayers((prev: any[]) =>
+                      setLayers((prev: Layer[]) =>
                         prev.map((l) =>
                           l.id === selectedLayer.id ? { ...l, text: newText } : l
                         )
                       );
                     }}
+                    aria-label="Layer text content"
                     className="mt-1 block w-full border-gray-300 rounded-md"
                   />
                 </div>
@@ -1453,12 +1556,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                     value={selectedLayer.font}
                     onChange={(e) => {
                       const newFont = e.target.value;
-                      setLayers((prev: any[]) =>
+                      setLayers((prev: Layer[]) =>
                         prev.map((l) =>
                           l.id === selectedLayer.id ? { ...l, font: newFont } : l
                         )
                       );
                     }}
+                    aria-label="Layer font"
                     className="mt-1 block w-full border-gray-300 rounded-md"
                   >
                     <option value="Arial">Arial</option>
@@ -1476,13 +1580,14 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                     onChange={(e) => {
                       const newSize = parseInt(e.target.value, 10);
                       if (!isNaN(newSize)) {
-                        setLayers((prev: any[]) =>
+                        setLayers((prev: Layer[]) =>
                           prev.map((l) =>
                             l.id === selectedLayer.id ? { ...l, size: newSize } : l
                           )
                         );
                       }
                     }}
+                    aria-label="Layer font size"
                     className="mt-1 block w-full border-gray-300 rounded-md"
                   />
                 </div>
@@ -1493,12 +1598,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                     value={selectedLayer.color}
                     onChange={(e) => {
                       const newColor = e.target.value;
-                      setLayers((prev: any[]) =>
+                      setLayers((prev: Layer[]) =>
                         prev.map((l) =>
                           l.id === selectedLayer.id ? { ...l, color: newColor } : l
                         )
                       );
                     }}
+                    aria-label="Layer color"
                     className="mt-1 block w-full border-gray-300 rounded-md"
                   />
                 </div>
@@ -1508,14 +1614,19 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                   <div className="flex gap-2 mt-1">
                     <button
                       onClick={() => {
-                        setLayers((prev: any[]) =>
+                        if (selectedLayer?.type !== 'text') return;
+                        setLayers((prev: Layer[]) =>
                           prev.map((l) =>
-                            l.id === selectedLayer.id ? { ...l, bold: !l.bold } : l
+                            l.id === selectedLayer.id
+                              ? { ...l, bold: !(l as TextLayer).bold }
+                              : l
                           )
                         );
                       }}
                       className={`px-2 py-1 border rounded ${
-                        selectedLayer.bold ? 'bg-blue-500 text-white' : 'bg-white'
+                        selectedLayer?.type === 'text' && (selectedLayer as TextLayer).bold
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-white'
                       }`}
                       title="Toggle Bold"
                     >
@@ -1523,14 +1634,19 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                     </button>
                     <button
                       onClick={() => {
-                        setLayers((prev: any[]) =>
+                        if (selectedLayer?.type !== 'text') return;
+                        setLayers((prev: Layer[]) =>
                           prev.map((l) =>
-                            l.id === selectedLayer.id ? { ...l, italic: !l.italic } : l
+                            l.id === selectedLayer.id
+                              ? { ...l, italic: !(l as TextLayer).italic }
+                              : l
                           )
                         );
                       }}
                       className={`px-2 py-1 border rounded ${
-                        selectedLayer.italic ? 'bg-blue-500 text-white' : 'bg-white'
+                        selectedLayer?.type === 'text' && (selectedLayer as TextLayer).italic
+                          ? 'bg-gray-200'
+                          : ''
                       }`}
                       title="Toggle Italic"
                     >
@@ -1544,10 +1660,12 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                   <div className="flex items-center gap-2 mt-1">
                     <input
                       type="checkbox"
+                      aria-label="Enable background for text layer"
+                      title="Toggle background for text layer"
                       checked={selectedLayer.useBackground}
                       onChange={(e) => {
                         const useBg = e.target.checked;
-                        setLayers((prev: any[]) =>
+                        setLayers((prev: Layer[]) =>
                           prev.map((l) =>
                             l.id === selectedLayer.id ? { ...l, useBackground: useBg } : l
                           )
@@ -1564,7 +1682,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                         value={selectedLayer.backgroundColor}
                         onChange={(e) => {
                           const newBg = e.target.value;
-                          setLayers((prev: any[]) =>
+                          setLayers((prev: Layer[]) =>
                             prev.map((l) =>
                               l.id === selectedLayer.id
                                 ? { ...l, backgroundColor: newBg }
@@ -1572,6 +1690,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                             )
                           );
                         }}
+                        aria-label="Layer background color"
                         className="mt-1 block w-full border-gray-300 rounded-md"
                       />
                       <label className="block text-xs text-gray-500 mt-2">Padding</label>
@@ -1580,7 +1699,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                         value={selectedLayer.bgPadding}
                         onChange={(e) => {
                           const newPad = parseInt(e.target.value, 10);
-                          setLayers((prev: any[]) =>
+                          setLayers((prev: Layer[]) =>
                             prev.map((l) =>
                               l.id === selectedLayer.id
                                 ? { ...l, bgPadding: isNaN(newPad) ? 0 : newPad }
@@ -1588,6 +1707,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                             )
                           );
                         }}
+                        aria-label="Layer background padding"
                         className="mt-1 block w-full border-gray-300 rounded-md"
                       />
                     </div>
@@ -1603,12 +1723,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                       value={selectedLayer.borderWidth}
                       onChange={(e) => {
                         const bw = parseInt(e.target.value, 10) || 0;
-                        setLayers((prev: any[]) =>
+                        setLayers((prev: Layer[]) =>
                           prev.map((l) =>
                             l.id === selectedLayer.id ? { ...l, borderWidth: bw } : l
                           )
                         );
                       }}
+                      aria-label="Layer border width"
                       className="mt-1 block w-full border-gray-300 rounded-md"
                     />
                   </div>
@@ -1619,12 +1740,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                       value={selectedLayer.borderColor}
                       onChange={(e) => {
                         const bc = e.target.value;
-                        setLayers((prev: any[]) =>
+                        setLayers((prev: Layer[]) =>
                           prev.map((l) =>
                             l.id === selectedLayer.id ? { ...l, borderColor: bc } : l
                           )
                         );
                       }}
+                      aria-label="Layer border color"
                       className="mt-1 block w-full border-gray-300 rounded-md"
                     />
                   </div>
@@ -1642,7 +1764,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                         onBlur={() => {
                           const newWidth = parseInt(layerWidthInput, 10);
                           if (!isNaN(newWidth) && newWidth > 0) {
-                            setLayers((prev: any[]) =>
+                            setLayers((prev: Layer[]) =>
                               prev.map((l) => {
                                 if (l.id !== selectedLayer.id) return l;
                                 if (l.lockAspectRatio) {
@@ -1658,6 +1780,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                             setLayerWidthInput(String(selectedLayer.width));
                           }
                         }}
+                        aria-label="Layer width"
                         className="mt-1 block w-full border-gray-300 rounded-md"
                       />
                     </div>
@@ -1671,7 +1794,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                         onBlur={() => {
                           const newHeight = parseInt(layerHeightInput, 10);
                           if (!isNaN(newHeight) && newHeight > 0) {
-                            setLayers((prev: any[]) =>
+                            setLayers((prev: Layer[]) =>
                               prev.map((l) => {
                                 if (l.id !== selectedLayer.id) return l;
                                 if (l.lockAspectRatio) {
@@ -1684,16 +1807,17 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                             );
                             setLayerHeightInput(String(newHeight));
                           } else {
-                            setLayerHeightInput(String(selectedLayer.height));
+                            setLayerHeightInput(String(typeof selectedLayer.height === 'number' ? selectedLayer.height : 0));
                           }
                         }}
+                        aria-label="Layer height"
                         className="mt-1 block w-full border-gray-300 rounded-md"
                       />
                     </div>
                     <div className="pt-5">
                       <button
                         onClick={() => {
-                          setLayers((prev: any[]) =>
+                          setLayers((prev: Layer[]) =>
                             prev.map((l) =>
                               l.id === selectedLayer.id ? { ...l, lockAspectRatio: !l.lockAspectRatio } : l
                             )
@@ -1722,7 +1846,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                         onBlur={() => {
                           const newX = parseInt(layerXInput, 10);
                           if (!isNaN(newX)) {
-                            setLayers((prev: any[]) =>
+                            setLayers((prev: Layer[]) =>
                               prev.map((l) =>
                                 l.id === selectedLayer.id ? { ...l, x: newX } : l
                               )
@@ -1732,6 +1856,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                             setLayerXInput(String(selectedLayer.x));
                           }
                         }}
+                        aria-label="Layer X position"
                         className="mt-1 block w-full border-gray-300 rounded-md"
                       />
                     </div>
@@ -1744,16 +1869,17 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                         onBlur={() => {
                           const newY = parseInt(layerYInput, 10);
                           if (!isNaN(newY)) {
-                            setLayers((prev: any[]) =>
+                            setLayers((prev: Layer[]) =>
                               prev.map((l) =>
                                 l.id === selectedLayer.id ? { ...l, y: newY } : l
                               )
                             );
                             setLayerYInput(String(newY));
                           } else {
-                            setLayerYInput(String(selectedLayer.y));
+                            setLayerYInput(String(typeof selectedLayer.y === 'number' ? selectedLayer.y : 0));
                           }
                         }}
+                        aria-label="Layer Y position"
                         className="mt-1 block w-full border-gray-300 rounded-md"
                       />
                     </div>
@@ -1767,12 +1893,12 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                   <label className="block text-sm font-medium">Image URL</label>
                   <input
                     type="url"
-                    value={selectedLayer.imageUrl || ''}
+                    value={selectedLayer.src || ''}
                     onChange={(e) => {
-                      setLayers((prev: any[]) =>
+                      setLayers((prev: Layer[]) =>
                         prev.map((l) =>
                           l.id === selectedLayer.id
-                            ? { ...l, imageUrl: e.target.value }
+                            ? { ...l, src: e.target.value }
                             : l
                         )
                       );
@@ -1782,20 +1908,15 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                       if (url) {
                         if (!/\.(jpeg|jpg|gif|png)$/i.test(url)) {
                           alert('Please enter a valid image URL (jpg, jpeg, png, gif).');
-                          setLayers((prev: any[]) =>
+                          setLayers((prev: Layer[]) =>
                             prev.map((l) =>
-                              l.id === selectedLayer.id ? { ...l, imageUrl: '' } : l
-                            )
-                          );
-                        } else {
-                          setLayers((prev: any[]) =>
-                            prev.map((l) =>
-                              l.id === selectedLayer.id ? { ...l, src: url } : l
+                              l.id === selectedLayer.id ? { ...l, src: '' } : l
                             )
                           );
                         }
                       }
                     }}
+                    aria-label="Layer image URL"
                     className="mt-1 block w-full border-gray-300 rounded-md"
                     placeholder="https://example.com/image.jpg"
                   />
@@ -1805,20 +1926,22 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={async (e) => {
+                    aria-label="Upload layer image"
+                    title="Choose an image for the layer"
+                    onChange={async (e: React.ChangeEvent<HTMLInputElement>) => {
                       const file = e.target.files?.[0];
                       if (file) {
                         try {
-                          const { dataUrl, width, height } = await resizeImage(file);
-                          setLayers((prev: any[]) =>
+                          const { dataUrl } = await resizeImage(file);
+                          setLayers((prev) =>
                             prev.map((l) =>
-                              l.id === selectedLayer.id
-                                ? { ...l, src: dataUrl, width, height }
+                              l.id === selectedLayer?.id
+                                ? { ...l, src: dataUrl }
                                 : l
                             )
                           );
-                        } catch (error) {
-                          console.error('Error processing image:', error);
+                        } catch {
+                          console.error('Error processing image:');
                         }
                       }
                     }}
@@ -1836,10 +1959,12 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                   <div className="flex items-center gap-2 mt-1">
                     <input
                       type="checkbox"
+                      aria-label="Enable color fill for image layer"
+                      title="Toggle color fill for image layer"
                       checked={selectedLayer.useColorFill}
                       onChange={(e) => {
                         const useFill = e.target.checked;
-                        setLayers((prev: any[]) =>
+                        setLayers((prev: Layer[]) =>
                           prev.map((l) =>
                             l.id === selectedLayer.id
                               ? { ...l, useColorFill: useFill }
@@ -1858,12 +1983,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                         value={selectedLayer.fillColor}
                         onChange={(e) => {
                           const newFill = e.target.value;
-                          setLayers((prev: any[]) =>
+                          setLayers((prev: Layer[]) =>
                             prev.map((l) =>
                               l.id === selectedLayer.id ? { ...l, fillColor: newFill } : l
                             )
                           );
                         }}
+                        aria-label="Layer fill color"
                         className="mt-1 block w-full border-gray-300 rounded-md"
                       />
                     </div>
@@ -1879,12 +2005,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                       value={selectedLayer.borderWidth}
                       onChange={(e) => {
                         const bw = parseInt(e.target.value, 10) || 0;
-                        setLayers((prev: any[]) =>
+                        setLayers((prev: Layer[]) =>
                           prev.map((l) =>
                             l.id === selectedLayer.id ? { ...l, borderWidth: bw } : l
                           )
                         );
                       }}
+                      aria-label="Layer border width"
                       className="mt-1 block w-full border-gray-300 rounded-md"
                     />
                   </div>
@@ -1895,12 +2022,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                       value={selectedLayer.borderColor}
                       onChange={(e) => {
                         const bc = e.target.value;
-                        setLayers((prev: any[]) =>
+                        setLayers((prev: Layer[]) =>
                           prev.map((l) =>
                             l.id === selectedLayer.id ? { ...l, borderColor: bc } : l
                           )
                         );
                       }}
+                      aria-label="Layer border color"
                       className="mt-1 block w-full border-gray-300 rounded-md"
                     />
                   </div>
@@ -1918,7 +2046,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                         onBlur={() => {
                           const newWidth = parseInt(layerWidthInput, 10);
                           if (!isNaN(newWidth) && newWidth > 0) {
-                            setLayers((prev: any[]) =>
+                            setLayers((prev: Layer[]) =>
                               prev.map((l) => {
                                 if (l.id !== selectedLayer.id) return l;
                                 if (l.lockAspectRatio) {
@@ -1934,6 +2062,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                             setLayerWidthInput(String(selectedLayer.width));
                           }
                         }}
+                        aria-label="Layer width"
                         className="mt-1 block w-full border-gray-300 rounded-md"
                       />
                     </div>
@@ -1947,7 +2076,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                         onBlur={() => {
                           const newHeight = parseInt(layerHeightInput, 10);
                           if (!isNaN(newHeight) && newHeight > 0) {
-                            setLayers((prev: any[]) =>
+                            setLayers((prev: Layer[]) =>
                               prev.map((l) => {
                                 if (l.id !== selectedLayer.id) return l;
                                 if (l.lockAspectRatio) {
@@ -1960,16 +2089,17 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                             );
                             setLayerHeightInput(String(newHeight));
                           } else {
-                            setLayerHeightInput(String(selectedLayer.height));
+                            setLayerHeightInput(String(typeof selectedLayer.height === 'number' ? selectedLayer.height : 0));
                           }
                         }}
+                        aria-label="Layer height"
                         className="mt-1 block w-full border-gray-300 rounded-md"
                       />
                     </div>
                     <div className="pt-5">
                       <button
                         onClick={() => {
-                          setLayers((prev: any[]) =>
+                          setLayers((prev: Layer[]) =>
                             prev.map((l) =>
                               l.id === selectedLayer.id ? { ...l, lockAspectRatio: !l.lockAspectRatio } : l
                             )
@@ -1998,7 +2128,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                         onBlur={() => {
                           const newX = parseInt(layerXInput, 10);
                           if (!isNaN(newX)) {
-                            setLayers((prev: any[]) =>
+                            setLayers((prev: Layer[]) =>
                               prev.map((l) =>
                                 l.id === selectedLayer.id ? { ...l, x: newX } : l
                               )
@@ -2008,6 +2138,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                             setLayerXInput(String(selectedLayer.x));
                           }
                         }}
+                        aria-label="Layer X position"
                         className="mt-1 block w-full border-gray-300 rounded-md"
                       />
                     </div>
@@ -2020,16 +2151,17 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ jsonData, renderOnly })
                         onBlur={() => {
                           const newY = parseInt(layerYInput, 10);
                           if (!isNaN(newY)) {
-                            setLayers((prev: any[]) =>
+                            setLayers((prev: Layer[]) =>
                               prev.map((l) =>
                                 l.id === selectedLayer.id ? { ...l, y: newY } : l
                               )
                             );
                             setLayerYInput(String(newY));
                           } else {
-                            setLayerYInput(String(selectedLayer.y));
+                            setLayerYInput(String(typeof selectedLayer.y === 'number' ? selectedLayer.y : 0));
                           }
                         }}
+                        aria-label="Layer Y position"
                         className="mt-1 block w-full border-gray-300 rounded-md"
                       />
                     </div>

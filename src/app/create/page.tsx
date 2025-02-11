@@ -5,7 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import React, { useState } from 'react';
 import TemplateEditor from '@/components/TemplateEditor';
 
-const JsonUploader = ({ onDataLoaded }: { onDataLoaded: (data: any) => void }) => {
+const JsonUploader = ({ onDataLoaded }: { onDataLoaded: (data: unknown) => void }) => {
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isDragActive, setIsDragActive] = useState<boolean>(false);
@@ -23,7 +23,7 @@ const JsonUploader = ({ onDataLoaded }: { onDataLoaded: (data: any) => void }) =
         } else {
           setError('The JSON file structure is not correct.');
         }
-      } catch (err) {
+      } catch {
         setError('Invalid JSON file.');
       }
     };
@@ -74,6 +74,7 @@ const JsonUploader = ({ onDataLoaded }: { onDataLoaded: (data: any) => void }) =
         <input
           type="file"
           accept=".json"
+          aria-label="Upload JSON file"
           onChange={handleInputChange}
           className="file-input"
         />
@@ -85,9 +86,9 @@ const JsonUploader = ({ onDataLoaded }: { onDataLoaded: (data: any) => void }) =
 };
 
 export default function CreatePage() {
-  const [jsonData, setJsonData] = useState<any>(null);
+  const [jsonData, setJsonData] = useState<unknown>(null);
 
-  const handleDataLoaded = (data: any) => {
+  const handleDataLoaded = (data: unknown) => {
     setJsonData(data);
     console.log('JSON data loaded:', data);
   };
@@ -107,7 +108,7 @@ export default function CreatePage() {
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl font-bold mb-4">Create Image</h1>
           <JsonUploader onDataLoaded={handleDataLoaded} />
-          {jsonData && (
+          {!!jsonData && (
             <div>
               <h2>Image Preview</h2>
               <TemplateEditor jsonData={jsonData} renderOnly={true} />

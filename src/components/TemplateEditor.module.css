@@ -1,0 +1,94 @@
+.boundingBox {
+  pointer-events: all;
+}
+
+.resizeHandle {
+  cursor: nw-resize;
+}
+
+.resizeHandleNE {
+  cursor: ne-resize;
+}
+
+.resizeHandleSW {
+  cursor: sw-resize;
+}
+
+.resizeHandleSE {
+  cursor: se-resize;
+}
+
+.resizeHandleN {
+  cursor: n-resize;
+}
+
+.resizeHandleS {
+  cursor: s-resize;
+}
+
+.resizeHandleW {
+  cursor: w-resize;
+}
+
+.resizeHandleE {
+  cursor: e-resize;
+}
+
+.textLayer {
+  cursor: move;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.previewContainer {
+  position: relative;
+  overflow: hidden;
+  background-color: #f0f0f0;
+  width: 1080px;
+  height: 1080px;
+}
+
+.svgContainer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: white;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.layerPreview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.layerControls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.movableElement {
+  cursor: move;
+}
+
+.svgCanvas {
+  transform-origin: top left;
+  border: 1px solid #e2e8f0;
+}
+
+.imagePreview {
+  cursor: move;
+}
+
+.zoomContainer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
