@@ -1,6 +1,35 @@
 'use client';
 
-// Update Layer interfaces with discriminated unions
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  ChangeEvent,
+  FocusEvent
+} from 'react';
+import { Card } from '@/components/ui/card';
+import {
+  Image as ImageIcon,
+  Type,
+  Download,
+  Trash,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignStartVertical,
+  AlignCenterVertical,
+  AlignEndVertical,
+  Copy,
+  FileImage,
+  Lock,
+  Unlock
+} from 'lucide-react';
+import styles from './TemplateEditor.module.css';
+
+// ---------------------------------------------------------------------------
+// Layer Type Definitions
 type LayerType = 'text' | 'image' | 'shape';
 
 interface BaseLayer {
@@ -53,165 +82,85 @@ interface BoundingBox {
   height: number;
 }
 
-interface DragOffset {
-  x: number;
-  y: number;
+// ---------------------------------------------------------------------------
+// TemplateData Interface – updated to include canvasWidth, canvasHeight and backgroundImage
+interface TemplateData {
+  layers?: Layer[];
+  canvasWidth?: number;
+  canvasHeight?: number;
+  backgroundImage?: string | null;
 }
-
-interface ResizeState {
-  handle: string;
-  initialX: number;
-  initialY: number;
-  initialWidth: number;
-  initialHeight: number;
-  aspectRatio: number;
-  layerId: string;
-}
-
-import React, {
-  useState,
-  useRef,
-  useCallback,
-  useEffect,
-  useLayoutEffect
-} from 'react';
-import { Card } from '@/components/ui/card';
-import {
-  Image as ImageIcon,
-  Type,
-  Download,
-  Trash,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  AlignStartVertical,
-  AlignCenterVertical,
-  AlignEndVertical,
-  Copy,
-  FileImage,
-  Lock,
-  Unlock
-} from 'lucide-react';
-import styles from './TemplateEditor.module.css';
 
 // ---------------------------------------------------------------------------
-// BoundingBox Component
-// If a custom bbox is passed (for text layers), it uses that for drawing.
-interface BoundingBoxProps {
-  layer: Layer;
-  bbox?: BoundingBox;
-  onResizeStart: (e: React.MouseEvent, handle: string) => void;
-}
+// BoundingBox Component (restored to the previous style using circles)
+const BoundingBox = React.memo(
+  ({
+    layer,
+    onResizeStart,
+    bbox
+  }: {
+    layer: Layer;
+    onResizeStart: (e: React.MouseEvent, layer: Layer, handle: string) => void;
+    bbox?: BoundingBox;
+  }) => {
+    const handleMouseDown = (e: React.MouseEvent, pos: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onResizeStart(e, layer, pos);
+    };
 
-const BoundingBox: React.FC<BoundingBoxProps> = ({ layer, bbox, onResizeStart }) => {
-  const handleMouseDown = (e: React.MouseEvent, pos: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onResizeStart(e, pos);
-  };
+    const box: BoundingBox = bbox || {
+      x: layer.x,
+      y: layer.y,
+      width: layer.width,
+      height: layer.height
+    };
 
-  const box = bbox || {
-    x: typeof layer.x === 'number' ? layer.x : 0,
-    y: typeof layer.y === 'number' ? layer.y : 0,
-    width: typeof layer.width === 'number' ? layer.width : 0,
-    height: typeof layer.height === 'number' ? layer.height : 0
-  };
-
-  return (
-    <g className={styles.boundingBox}>
-      <rect
-        x={box.x - 2}
-        y={box.y - 2}
-        width={box.width + 4}
-        height={box.height + 4}
-        fill="none"
-        stroke="#00ff00"
-        strokeWidth={1}
-        strokeDasharray="4 4"
-      />
-      {/* Resize handles */}
-      <rect
-        x={box.x - 4}
-        y={box.y - 4}
-        width={8}
-        height={8}
-        fill="#00ff00"
-        onMouseDown={(e) => handleMouseDown(e, 'nw')}
-        className={styles.resizeHandle}
-      />
-      <rect
-        x={box.x + box.width - 4}
-        y={box.y - 4}
-        width={8}
-        height={8}
-        fill="#00ff00"
-        onMouseDown={(e) => handleMouseDown(e, 'ne')}
-        className={styles.resizeHandleNE}
-      />
-      <rect
-        x={box.x - 4}
-        y={box.y + box.height - 4}
-        width={8}
-        height={8}
-        fill="#00ff00"
-        onMouseDown={(e) => handleMouseDown(e, 'sw')}
-        className={styles.resizeHandleSW}
-      />
-      <rect
-        x={box.x + box.width - 4}
-        y={box.y + box.height - 4}
-        width={8}
-        height={8}
-        fill="#00ff00"
-        onMouseDown={(e) => handleMouseDown(e, 'se')}
-        className={styles.resizeHandleSE}
-      />
-      {/* Middle handles */}
-      <rect
-        x={box.x + box.width / 2 - 4}
-        y={box.y - 4}
-        width={8}
-        height={8}
-        fill="#00ff00"
-        onMouseDown={(e) => handleMouseDown(e, 'n')}
-        className={styles.resizeHandleN}
-      />
-      <rect
-        x={box.x + box.width / 2 - 4}
-        y={box.y + box.height - 4}
-        width={8}
-        height={8}
-        fill="#00ff00"
-        onMouseDown={(e) => handleMouseDown(e, 's')}
-        className={styles.resizeHandleS}
-      />
-      <rect
-        x={box.x - 4}
-        y={box.y + box.height / 2 - 4}
-        width={8}
-        height={8}
-        fill="#00ff00"
-        onMouseDown={(e) => handleMouseDown(e, 'w')}
-        className={styles.resizeHandleW}
-      />
-      <rect
-        x={box.x + box.width - 4}
-        y={box.y + box.height / 2 - 4}
-        width={8}
-        height={8}
-        fill="#00ff00"
-        onMouseDown={(e) => handleMouseDown(e, 'e')}
-        className={styles.resizeHandleE}
-      />
-    </g>
-  );
-};
+    return (
+      <g>
+        <rect
+          x={box.x - 2}
+          y={box.y - 2}
+          width={box.width + 4}
+          height={box.height + 4}
+          fill="none"
+          stroke="#00F"
+          strokeWidth="1"
+          strokeDasharray="4"
+        />
+        {['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map((pos) => (
+          <circle
+            key={pos}
+            cx={
+              box.x +
+              (pos.includes('e')
+                ? box.width
+                : pos.includes('w')
+                ? 0
+                : box.width / 2)
+            }
+            cy={
+              box.y +
+              (pos.includes('s')
+                ? box.height
+                : pos.includes('n')
+                ? 0
+                : box.height / 2)
+            }
+            r="4"
+            fill="#00F"
+            style={{ cursor: `${pos}-resize`, userSelect: 'none' }}
+            onMouseDown={(e) => handleMouseDown(e, pos)}
+          />
+        ))}
+      </g>
+    );
+  }
+);
 BoundingBox.displayName = 'BoundingBox';
 
 // ---------------------------------------------------------------------------
 // TextLayer Component
-// Renders the text and measures its actual bounding box using getBBox()
-// If background is enabled, the parent preview renders a background rect behind the text.
 const TextLayer = ({
   layer,
   onDragStart,
@@ -233,15 +182,22 @@ const TextLayer = ({
   return (
     <text
       ref={textRef}
-      x={layer.x}
-      y={layer.y}
-      fontSize={layer.size}
+      x={Math.round(layer.x)}
+      y={Math.round(layer.y + layer.height * 0.7)}
       fontFamily={layer.font}
+      fontSize={layer.size}
       fill={layer.color}
-      className={styles.textLayer}
-      fontWeight={layer.bold ? 'bold' : 'normal'}
-      fontStyle={layer.italic ? 'italic' : 'normal'}
-      onMouseDown={(e) => onDragStart(e, layer)}
+      style={{
+        cursor: 'move',
+        userSelect: 'none',
+        fontStyle: layer.italic ? 'italic' : 'normal',
+        fontWeight: layer.bold ? 'bold' : 'normal'
+      }}
+      opacity={layer.opacity ?? 1}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onDragStart(e, layer);
+      }}
     >
       {layer.text}
     </text>
@@ -306,12 +262,6 @@ const getUniqueLayerName = (prevLayers: Layer[], type: LayerType): string => {
   return name;
 };
 
-interface TemplateData {
-  layers?: Layer[];
-  width?: number;
-  height?: number;
-}
-
 interface TemplateEditorProps {
   width?: number;
   height?: number;
@@ -328,62 +278,121 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   renderOnly
 }) => {
   // ---------------------------------------------------------------------------
-  // Canvas Settings – starting as an Instagram post
-  const [canvasWidth, setCanvasWidth] = useState<number>(jsonData?.width || width);
-  const [canvasHeight, setCanvasHeight] = useState<number>(jsonData?.height || height);
-  const [canvasWidthInput, setCanvasWidthInput] = useState<string>(String(jsonData?.width || width));
-  const [canvasHeightInput, setCanvasHeightInput] = useState<string>(String(jsonData?.height || height));
+  // Default Template Data (if no jsonData is provided)
+  const defaultTemplateData: TemplateData = {
+    canvasWidth: 1080,
+    canvasHeight: 1080,
+    backgroundImage:
+      'https://unsplash.com/photos/kLOuJrm-Wnk/download?ixid=M3wxMjA3fDB8MXxhbGx8MTB8fHx8fHx8fDE3MzkyNDI5Mzd8&force=true&w=1920.png',
+    layers: [
+      {
+        id: 'layer_2',
+        type: 'text',
+        name: 'Title',
+        text: 'Sample Title',
+        font: 'Helvetica',
+        size: 60,
+        color: '#333333',
+        x: 50,
+        y: 50,
+        width: 980,
+        height: 100,
+        visible: true,
+        opacity: 1,
+        bold: true,
+        italic: false,
+        useBackground: true,
+        backgroundColor: '#ffffff',
+        bgPadding: 8,
+        borderWidth: 2,
+        borderColor: '#333333',
+        lockAspectRatio: true
+      },
+      {
+        id: 'layer_4',
+        type: 'text',
+        name: 'Caption',
+        text: 'This is a caption',
+        font: 'Times New Roman',
+        size: 72,
+        color: '#00f004',
+        x: 79,
+        y: 816,
+        width: 202,
+        height: 16,
+        visible: true,
+        opacity: 1,
+        italic: true,
+        bold: false,
+        useBackground: true,
+        backgroundColor: '#850061',
+        bgPadding: 8,
+        borderWidth: 0,
+        borderColor: '#666666',
+        lockAspectRatio: true
+      },
+      {
+        id: 'layer_3',
+        type: 'image',
+        name: 'Sample Image',
+        useColorFill: true,
+        fillColor: '#c38cca',
+        x: 50,
+        y: 200,
+        width: 980,
+        height: 600,
+        visible: true,
+        opacity: 1,
+        borderWidth: 3,
+        borderColor: '#ffffff',
+        src: '',
+        lockAspectRatio: true
+      },
+      {
+        id: 'layer_1',
+        type: 'image',
+        name: 'Background',
+        useColorFill: false,
+        fillColor: '#e0e0e0',
+        x: 0,
+        y: 0,
+        width: 1080,
+        height: 1080,
+        visible: true,
+        opacity: 1,
+        borderWidth: 0,
+        borderColor: '#000000',
+        src: '[Image: Background]',
+        lockAspectRatio: true
+      }
+    ]
+  };
+
+  // Use the provided jsonData if available; otherwise, fall back to defaultTemplateData.
+  const effectiveTemplateData = jsonData || defaultTemplateData;
+
+  // ---------------------------------------------------------------------------
+  // Canvas Settings – starting with default template data
+  const [canvasWidth, setCanvasWidth] = useState<number>(
+    effectiveTemplateData.canvasWidth || width
+  );
+  const [canvasHeight, setCanvasHeight] = useState<number>(
+    effectiveTemplateData.canvasHeight || height
+  );
+  const [canvasWidthInput, setCanvasWidthInput] = useState<string>(
+    String(effectiveTemplateData.canvasWidth || width)
+  );
+  const [canvasHeightInput, setCanvasHeightInput] = useState<string>(
+    String(effectiveTemplateData.canvasHeight || height)
+  );
   const [preset, setPreset] = useState<string>('1080x1080');
 
   // Zoom state for preview pane – start zoomed out to avoid scrollbars
   const [zoom, setZoom] = useState<number>(0.5);
 
   // ---------------------------------------------------------------------------
-  // Sample project state for an Instagram post.
-  // The background layer is pushed to the bottom and uses the provided Unsplash URL.
-  const initialLayers: Layer[] = jsonData?.layers || [
-    {
-      id: 'layer_2',
-      type: 'text',
-      name: 'New Text',
-      text: 'New Text',
-      font: 'Arial',
-      size: 36,
-      color: '#000000',
-      x: 100,
-      y: 100,
-      width: 200,
-      height: 40,
-      visible: true,
-      bold: false,
-      italic: false,
-      useBackground: false,
-      backgroundColor: '#ffffff',
-      bgPadding: 4,
-      borderWidth: 0,
-      borderColor: '#000000',
-      lockAspectRatio: false,
-      opacity: 1
-    },
-    {
-      id: 'layer_1',
-      type: 'image',
-      name: 'New Image',
-      x: 100,
-      y: 200,
-      width: 200,
-      height: 200,
-      visible: true,
-      src: '',
-      useColorFill: false,
-      fillColor: '#cccccc',
-      borderWidth: 0,
-      borderColor: '#000000',
-      lockAspectRatio: true,
-      opacity: 1
-    }
-  ];
-  const [layers, setLayers] = useState<Layer[]>(initialLayers);
+  // Project state using effective template data
+  const [layers, setLayers] = useState<Layer[]>(effectiveTemplateData.layers || []);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const selectedLayer = layers.find((l: Layer) => l.id === selectedLayerId);
 
@@ -401,9 +410,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   useEffect(() => {
     if (selectedLayer) {
       setLayerWidthInput(String(Math.round(selectedLayer.width)));
-      setLayerHeightInput(String(Math.round(typeof selectedLayer.height === 'number' ? selectedLayer.height : 0)));
+      setLayerHeightInput(String(Math.round(selectedLayer.height)));
       setLayerXInput(String(Math.round(selectedLayer.x)));
-      setLayerYInput(String(Math.round(typeof selectedLayer.y === 'number' ? selectedLayer.y : 0)));
+      setLayerYInput(String(Math.round(selectedLayer.y)));
     }
   }, [selectedLayer]);
 
@@ -422,12 +431,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   // ---------------------------------------------------------------------------
   // Preview (canvas drag states)
   const [draggedLayer, setDraggedLayer] = useState<Layer | null>(null);
-  const [dragOffset, setDragOffset] = useState<DragOffset>({ x: 0, y: 0 });
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
   const resizeTimeoutRef = useRef<number | null>(null);
 
-  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
-  // (Note: We no longer use a JSON Import/Export pane in the sidebar.)
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(
+    effectiveTemplateData.backgroundImage || null
+  );
   // ---------------------------------------------------------------------------
   // Layer Pane Drag-and-Drop States & Container Ref
   const [draggedLayerIndex, setDraggedLayerIndex] = useState<number | null>(null);
@@ -517,8 +527,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       const svgP = pt.matrixTransform(svg.getScreenCTM()?.inverse());
       setDraggedLayer(layer);
       setDragOffset({
-        x: svgP.x - (typeof layer.x === 'number' ? layer.x : 0),
-        y: svgP.y - (typeof layer.y === 'number' ? layer.y : 0)
+        x: svgP.x - layer.x,
+        y: svgP.y - layer.y
       });
       setSelectedLayerId(layer.id);
     }
@@ -534,7 +544,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       setLayers((prev: Layer[]) =>
         prev.map((l) =>
           l.id === draggedLayer.id
-            ? { ...l, x: Math.round(svgP.x - (typeof dragOffset.x === 'number' ? dragOffset.x : 0)), y: Math.round(svgP.y - (typeof dragOffset.y === 'number' ? dragOffset.y : 0)) }
+            ? { ...l, x: Math.round(svgP.x - dragOffset.x), y: Math.round(svgP.y - dragOffset.y) }
             : l
         )
       );
@@ -542,27 +552,31 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     [draggedLayer, dragOffset]
   );
   // New resizeState includes initial values and aspect ratio
-  const [resizeState, setResizeState] = useState<ResizeState | null>(null);
+  const [resizeState, setResizeState] = useState<{
+    layer: Layer;
+    handle: string;
+    initialX: number;
+    initialY: number;
+    initialWidth: number;
+    initialHeight: number;
+    aspectRatio: number;
+  } | null>(null);
   const handleResizeStart = useCallback(
-    (e: React.MouseEvent, handle: string) => {
+    (e: React.MouseEvent, layer: Layer, handle: string) => {
       e.preventDefault();
       e.stopPropagation();
-      const width = typeof selectedLayer?.width === 'number' ? selectedLayer.width : 0;
-      const height = typeof selectedLayer?.height === 'number' ? selectedLayer.height : 0;
-      const x = typeof selectedLayer?.x === 'number' ? selectedLayer.x : 0;
-      const y = typeof selectedLayer?.y === 'number' ? selectedLayer.y : 0;
       setResizeState({
+        layer,
         handle,
-        initialX: x,
-        initialY: y,
-        initialWidth: width,
-        initialHeight: height,
-        aspectRatio: height !== 0 ? width / height : 1,
-        layerId: selectedLayer?.id || ''
+        initialX: layer.x,
+        initialY: layer.y,
+        initialWidth: layer.width,
+        initialHeight: layer.height,
+        aspectRatio: layer.height !== 0 ? layer.width / layer.height : 1
       });
-      setSelectedLayerId(selectedLayer?.id || null);
+      setSelectedLayerId(layer.id);
     },
-    [selectedLayer]
+    []
   );
   const handleResizeMove = useCallback(
     (e: React.MouseEvent) => {
@@ -572,54 +586,76 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       pt.x = e.clientX;
       pt.y = e.clientY;
       const svgP = pt.matrixTransform(svg.getScreenCTM()?.inverse());
-      const { handle, initialX, initialY, initialWidth, initialHeight, aspectRatio, layerId } = resizeState;
+      const { layer, handle, initialX, initialY, initialWidth, initialHeight, aspectRatio } = resizeState;
       setLayers((prev: Layer[]) =>
-        prev.map((layer) => {
-          if (layer.id !== layerId) return layer;
-          
-          // Calculate new dimensions
-          let deltaX = 0;
-          let deltaY = 0;
-          let newWidth = initialWidth;
-          let newHeight = initialHeight;
-          
-          switch (handle) {
-            case 'top-left':
-              deltaX = svgP.x - initialX;
-              deltaY = svgP.y - initialY;
-              newWidth = initialWidth - deltaX;
-              newHeight = layer.lockAspectRatio ? newWidth / aspectRatio : initialHeight - deltaY;
-              break;
-            case 'top-right':
-              deltaY = svgP.y - initialY;
-              newWidth = svgP.x - initialX;
-              newHeight = layer.lockAspectRatio ? newWidth / aspectRatio : initialHeight - deltaY;
-              break;
-            case 'bottom-left':
-              deltaX = svgP.x - initialX;
-              newWidth = initialWidth - deltaX;
-              newHeight = layer.lockAspectRatio ? newWidth / aspectRatio : svgP.y - initialY;
-              break;
-            case 'bottom-right':
-              newWidth = svgP.x - initialX;
-              newHeight = layer.lockAspectRatio ? newWidth / aspectRatio : svgP.y - initialY;
-              break;
+        prev.map((l) => {
+          if (l.id !== layer.id) return l;
+          const newLayer = { ...l };
+          // Locked aspect ratio resizing (using initial values)
+          if (l.lockAspectRatio) {
+            if (handle === 'e') {
+              newLayer.width = Math.max(50, Math.round(svgP.x - initialX));
+              newLayer.height = Math.round(newLayer.width / aspectRatio);
+            } else if (handle === 'w') {
+              newLayer.width = Math.max(50, Math.round(initialWidth + (initialX - svgP.x)));
+              newLayer.height = Math.round(newLayer.width / aspectRatio);
+              newLayer.x = initialX + (initialWidth - newLayer.width);
+            } else if (handle === 's') {
+              newLayer.height = Math.max(20, Math.round(svgP.y - initialY));
+              newLayer.width = Math.round(newLayer.height * aspectRatio);
+            } else if (handle === 'n') {
+              newLayer.height = Math.max(20, Math.round(initialHeight + (initialY - svgP.y)));
+              newLayer.width = Math.round(newLayer.height * aspectRatio);
+              newLayer.y = initialY + (initialHeight - newLayer.height);
+            } else if (handle === 'nw') {
+              newLayer.width = Math.max(50, Math.round((initialX + initialWidth) - svgP.x));
+              newLayer.height = Math.round(newLayer.width / aspectRatio);
+              newLayer.x = initialX + initialWidth - newLayer.width;
+              newLayer.y = initialY + initialHeight - newLayer.height;
+            } else if (handle === 'ne') {
+              newLayer.width = Math.max(50, Math.round(svgP.x - initialX));
+              newLayer.height = Math.round(newLayer.width / aspectRatio);
+              newLayer.y = initialY + initialHeight - newLayer.height;
+            } else if (handle === 'sw') {
+              newLayer.width = Math.max(50, Math.round((initialX + initialWidth) - svgP.x));
+              newLayer.height = Math.round(newLayer.width / aspectRatio);
+              newLayer.x = initialX + initialWidth - newLayer.width;
+            } else if (handle === 'se') {
+              newLayer.width = Math.max(50, Math.round(svgP.x - initialX));
+              newLayer.height = Math.round(newLayer.width / aspectRatio);
+            }
+          } else {
+            // Unlocked resizing (using current values)
+            const currentAspectRatio = l.width / l.height;
+            if (handle.includes('e')) {
+              newLayer.width = Math.max(50, Math.round(svgP.x - l.x));
+              if (handle === 'e') newLayer.height = Math.round(newLayer.width / currentAspectRatio);
+            }
+            if (handle.includes('w')) {
+              const diff = l.x - svgP.x;
+              newLayer.x = Math.round(svgP.x);
+              newLayer.width = Math.max(50, Math.round(l.width + diff));
+              if (handle === 'w') newLayer.height = Math.round(newLayer.width / currentAspectRatio);
+            }
+            if (handle.includes('s')) {
+              newLayer.height = Math.max(20, Math.round(svgP.y - l.y));
+              if (handle === 's') newLayer.width = Math.round(newLayer.height * currentAspectRatio);
+            }
+            if (handle.includes('n')) {
+              const diff = l.y - svgP.y;
+              newLayer.y = Math.round(svgP.y);
+              newLayer.height = Math.max(20, Math.round(l.height + diff));
+              if (handle === 'n') newLayer.width = Math.round(newLayer.height * currentAspectRatio);
+            }
           }
-          
-          // Ensure minimum dimensions
-          newWidth = Math.max(newWidth, 10);
-          newHeight = Math.max(newHeight, 10);
-          
-          // Create new layer with updated properties
-          const updatedLayer: Layer = {
-            ...layer,
-            width: newWidth,
-            height: newHeight,
-            x: layer.x + (handle.includes('left') ? deltaX : 0),
-            y: layer.y + (handle.includes('top') ? deltaY : 0)
-          };
-          
-          return updatedLayer;
+          if (l.type === 'text') {
+            newLayer.size = Math.max(12, Math.round(newLayer.width / 2));
+          }
+          newLayer.x = Math.round(newLayer.x);
+          newLayer.y = Math.round(newLayer.y);
+          newLayer.width = Math.round(newLayer.width);
+          newLayer.height = Math.round(newLayer.height);
+          return newLayer;
         })
       );
     },
@@ -721,10 +757,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   }, [selectedLayer]);
   // ---------------------------------------------------------------------------
   // Remove JSON Import/Export pane.
-  // Instead, we add an Import button in the preview toolbar.
   const importFileRef = useRef<HTMLInputElement>(null);
   const handleImportFile = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
         const reader = new FileReader();
@@ -823,10 +858,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     img.src = url;
   }, [canvasWidth, canvasHeight]);
   // Handlers for canvas width/height input
-  const handleCanvasWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCanvasWidthChange = (e: ChangeEvent<HTMLInputElement>) => {
     setCanvasWidthInput(e.target.value);
   };
-  const handleCanvasWidthBlur = () => {
+  const handleCanvasWidthBlur = (e: FocusEvent<HTMLInputElement>) => {
     const parsed = parseInt(canvasWidthInput, 10);
     if (!isNaN(parsed) && parsed > 0) {
       setCanvasWidth(parsed);
@@ -835,10 +870,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       setCanvasWidthInput(String(canvasWidth));
     }
   };
-  const handleCanvasHeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCanvasHeightChange = (e: ChangeEvent<HTMLInputElement>) => {
     setCanvasHeightInput(e.target.value);
   };
-  const handleCanvasHeightBlur = () => {
+  const handleCanvasHeightBlur = (e: FocusEvent<HTMLInputElement>) => {
     const parsed = parseInt(canvasHeightInput, 10);
     if (!isNaN(parsed) && parsed > 0) {
       setCanvasHeight(parsed);
@@ -848,27 +883,22 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     }
   };
   // Handler for preset selection
-  const handlePresetChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const value = e.target.value;
-      setPreset(value);
-      if (value) {
-        const [w, h] = value.split('x').map((v) => parseInt(v, 10));
-        if (!isNaN(w) && !isNaN(h)) {
-          setCanvasWidth(w);
-          setCanvasHeight(h);
-          setCanvasWidthInput(String(w));
-          setCanvasHeightInput(String(h));
-        }
+  const handlePresetChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    setPreset(value);
+    if (value) {
+      const [w, h] = value.split('x').map((v) => parseInt(v, 10));
+      if (!isNaN(w) && !isNaN(h)) {
+        setCanvasWidth(w);
+        setCanvasHeight(h);
+        setCanvasWidthInput(String(w));
+        setCanvasHeightInput(String(h));
       }
-    },
-    []
-  );
+    }
+  };
 
   // ---------------------------------------------------------------------------
   // Helper functions for Alignment
-  // getLayerBBox returns the measured bounding box for text layers (if available)
-  // or the stored values for other layers.
   const getLayerBBox = (layer: Layer) => {
     if (layer.type === 'text' && textBBoxes[layer.id]) {
       return textBBoxes[layer.id];
@@ -932,7 +962,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
 
   // ---------------------------------------------------------------------------
   // Alignment Settings for the properties panel
-  // These buttons adjust the x and y of the selected layer based on its measured bounding box.
   const renderAlignmentSettings = () => {
     if (!selectedLayer) return null;
     return (
@@ -1045,14 +1074,17 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
 
   if (renderOnly) {
     return (
-      <div className="w-full">
+      <div
+        className="w-full"
+        style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}
+      >
         <svg
           ref={svgRef}
           width={canvasWidth}
           height={canvasHeight}
           viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
           className={styles.svgCanvas}
-          style={{ transform: `scale(${zoom})` }}
+          style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
         >
           {backgroundImage ? (
             <image
@@ -1144,12 +1176,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               </g>
             ))}
         </svg>
-        <button
-          onClick={handleExportPNG}
-          className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Download Image
-        </button>
       </div>
     );
   }
@@ -1238,7 +1264,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                   onDragStart={(e) => handleLayerDragStart(e, index)}
                   onDragEnd={() => setDraggedLayerIndex(null)}
                 >
-                  {/* Left section: icons and layer name */}
                   <div className="flex items-center flex-1 overflow-hidden space-x-2">
                     <span className="text-gray-400">⋮⋮</span>
                     <button
@@ -1258,7 +1283,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     {layer.type === 'text' ? <Type size={16} /> : <ImageIcon size={16} />}
                     <span className="truncate">{layer.name || (layer.type === 'text' ? layer.text : '') || layer.id}</span>
                   </div>
-                  {/* Right section: duplicate and delete buttons */}
                   <div className="flex items-center space-x-2 flex-shrink-0">
                     <button
                       onClick={(e) => {
@@ -1321,7 +1345,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold">Preview</h2>
             <div className="flex items-center gap-2">
-              {/* Import button */}
               <button
                 onClick={() => importFileRef.current?.click()}
                 className="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600"
@@ -1343,30 +1366,32 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               >
                 +
               </button>
-              <button
-                className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded"
-                onClick={handleExport}
-                title="Export JSON"
-              >
-                <Download size={20} />
-                Export
-              </button>
-              <button
-                className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded"
-                onClick={handleExportPNG}
-                title="Export PNG"
-              >
-                <FileImage size={20} />
-                PNG
-              </button>
+              {!renderOnly && (
+                <div className="flex items-center gap-2">
+                  <button
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded"
+                    onClick={handleExport}
+                    title="Export JSON"
+                  >
+                    <Download size={20} />
+                    Export
+                  </button>
+                  <button
+                    className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded"
+                    onClick={handleExportPNG}
+                    title="Export PNG"
+                  >
+                    <FileImage size={20} />
+                    PNG
+                  </button>
+                </div>
+              )}
               <input
-                aria-label="Import file"
-                title="Import template file"
-                ref={importFileRef}
                 type="file"
                 accept="application/json"
-                className={styles.hiddenInput}
+                ref={importFileRef}
                 onChange={handleImportFile}
+                style={{ display: 'none' }}
               />
             </div>
           </div>
@@ -1454,7 +1479,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                                 width={layer.width}
                                 height={layer.height}
                                 fill={layer.fillColor}
-                                className={styles.movableElement}
+                                style={{ cursor: 'move' }}
                                 opacity={layer.opacity ?? 1}
                                 onMouseDown={(e) => handleDragStart(e, layer)}
                               />
@@ -1471,7 +1496,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                                       ? 'none'
                                       : 'xMidYMid meet'
                                   }
-                                  className={styles.imagePreview}
+                                  style={{ cursor: 'move' }}
                                   opacity={layer.opacity ?? 1}
                                   onMouseDown={(e) => handleDragStart(e, layer)}
                                 />
@@ -1608,25 +1633,19 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     className="mt-1 block w-full border-gray-300 rounded-md"
                   />
                 </div>
-                {/* WYSIWYG text styling controls */}
                 <div className="mb-2">
                   <label className="block text-sm font-medium">Text Styling</label>
                   <div className="flex gap-2 mt-1">
                     <button
                       onClick={() => {
-                        if (selectedLayer?.type !== 'text') return;
                         setLayers((prev: Layer[]) =>
                           prev.map((l) =>
-                            l.id === selectedLayer.id
-                              ? { ...l, bold: !(l as TextLayer).bold }
-                              : l
+                            l.id === selectedLayer.id ? { ...l, bold: !l.bold } : l
                           )
                         );
                       }}
                       className={`px-2 py-1 border rounded ${
-                        selectedLayer?.type === 'text' && (selectedLayer as TextLayer).bold
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-white'
+                        selectedLayer.bold ? 'bg-blue-500 text-white' : 'bg-white'
                       }`}
                       title="Toggle Bold"
                     >
@@ -1634,19 +1653,14 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     </button>
                     <button
                       onClick={() => {
-                        if (selectedLayer?.type !== 'text') return;
                         setLayers((prev: Layer[]) =>
                           prev.map((l) =>
-                            l.id === selectedLayer.id
-                              ? { ...l, italic: !(l as TextLayer).italic }
-                              : l
+                            l.id === selectedLayer.id ? { ...l, italic: !l.italic } : l
                           )
                         );
                       }}
                       className={`px-2 py-1 border rounded ${
-                        selectedLayer?.type === 'text' && (selectedLayer as TextLayer).italic
-                          ? 'bg-gray-200'
-                          : ''
+                        selectedLayer.italic ? 'bg-blue-500 text-white' : 'bg-white'
                       }`}
                       title="Toggle Italic"
                     >
@@ -1654,7 +1668,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     </button>
                   </div>
                 </div>
-                {/* Background Options for Text Layers */}
                 <div className="mb-2">
                   <label className="block text-sm font-medium">Background Options</label>
                   <div className="flex items-center gap-2 mt-1">
@@ -1713,7 +1726,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     </div>
                   )}
                 </div>
-                {/* Border Settings for Text Layers */}
                 <div className="mb-2">
                   <label className="block text-sm font-medium">Border Settings</label>
                   <div className="mb-2">
@@ -1751,7 +1763,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     />
                   </div>
                 </div>
-                {/* Dimensions & Position for Text Layers */}
                 <div className="mb-2">
                   <label className="block text-sm font-medium">Dimensions</label>
                   <div className="flex items-center gap-2">
@@ -1807,7 +1818,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                             );
                             setLayerHeightInput(String(newHeight));
                           } else {
-                            setLayerHeightInput(String(typeof selectedLayer.height === 'number' ? selectedLayer.height : 0));
+                            setLayerHeightInput(String(selectedLayer.height));
                           }
                         }}
                         aria-label="Layer height"
@@ -1876,7 +1887,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                             );
                             setLayerYInput(String(newY));
                           } else {
-                            setLayerYInput(String(typeof selectedLayer.y === 'number' ? selectedLayer.y : 0));
+                            setLayerYInput(String(selectedLayer.y));
                           }
                         }}
                         aria-label="Layer Y position"
@@ -1933,7 +1944,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                       if (file) {
                         try {
                           const { dataUrl } = await resizeImage(file);
-                          setLayers((prev) =>
+                          setLayers((prev: Layer[]) =>
                             prev.map((l) =>
                               l.id === selectedLayer?.id
                                 ? { ...l, src: dataUrl }
@@ -1953,7 +1964,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                       hover:file:bg-blue-100"
                   />
                 </div>
-                {/* Fill Options for Image Layers */}
                 <div className="mb-2">
                   <label className="block text-sm font-medium">Fill Options</label>
                   <div className="flex items-center gap-2 mt-1">
@@ -1995,7 +2005,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     </div>
                   )}
                 </div>
-                {/* Border Settings for Image Layers */}
                 <div className="mb-2">
                   <label className="block text-sm font-medium">Border Settings</label>
                   <div className="mb-2">
@@ -2033,7 +2042,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     />
                   </div>
                 </div>
-                {/* Dimensions & Position for Image Layers */}
                 <div className="mb-2">
                   <label className="block text-sm font-medium">Dimensions</label>
                   <div className="flex items-center gap-2">
@@ -2089,7 +2097,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                             );
                             setLayerHeightInput(String(newHeight));
                           } else {
-                            setLayerHeightInput(String(typeof selectedLayer.height === 'number' ? selectedLayer.height : 0));
+                            setLayerHeightInput(String(selectedLayer.height));
                           }
                         }}
                         aria-label="Layer height"
@@ -2158,7 +2166,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                             );
                             setLayerYInput(String(newY));
                           } else {
-                            setLayerYInput(String(typeof selectedLayer.y === 'number' ? selectedLayer.y : 0));
+                            setLayerYInput(String(selectedLayer.y));
                           }
                         }}
                         aria-label="Layer Y position"
@@ -2169,7 +2177,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 </div>
               </>
             )}
-            {/* Alignment Settings Section */}
             {renderAlignmentSettings()}
           </Card>
         ) : (
@@ -2180,6 +2187,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       </div>
     </div>
   );
-}
+};
 
 export default TemplateEditor;
