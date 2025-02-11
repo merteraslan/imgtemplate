@@ -6,8 +6,7 @@ import React, {
   useCallback,
   useEffect,
   useLayoutEffect,
-  ChangeEvent,
-  FocusEvent
+  ChangeEvent
 } from 'react';
 import { Card } from '@/components/ui/card';
 import {
@@ -648,7 +647,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               if (handle === 'n') newLayer.width = Math.round(newLayer.height * currentAspectRatio);
             }
           }
-          if (l.type === 'text') {
+          if (l.type === 'text' && newLayer.type === 'text') {
             newLayer.size = Math.max(12, Math.round(newLayer.width / 2));
           }
           newLayer.x = Math.round(newLayer.x);
@@ -861,7 +860,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const handleCanvasWidthChange = (e: ChangeEvent<HTMLInputElement>) => {
     setCanvasWidthInput(e.target.value);
   };
-  const handleCanvasWidthBlur = (e: FocusEvent<HTMLInputElement>) => {
+  const handleCanvasWidthBlur = () => {
     const parsed = parseInt(canvasWidthInput, 10);
     if (!isNaN(parsed) && parsed > 0) {
       setCanvasWidth(parsed);
@@ -873,7 +872,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const handleCanvasHeightChange = (e: ChangeEvent<HTMLInputElement>) => {
     setCanvasHeightInput(e.target.value);
   };
-  const handleCanvasHeightBlur = (e: FocusEvent<HTMLInputElement>) => {
+  const handleCanvasHeightBlur = () => {
     const parsed = parseInt(canvasHeightInput, 10);
     if (!isNaN(parsed) && parsed > 0) {
       setCanvasHeight(parsed);
@@ -1392,6 +1391,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 ref={importFileRef}
                 onChange={handleImportFile}
                 style={{ display: 'none' }}
+                aria-label="Import template JSON file"
               />
             </div>
           </div>
@@ -1640,12 +1640,14 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                       onClick={() => {
                         setLayers((prev: Layer[]) =>
                           prev.map((l) =>
-                            l.id === selectedLayer.id ? { ...l, bold: !l.bold } : l
+                            l.id === selectedLayer.id && l.type === 'text'
+                              ? { ...l, bold: !l.bold }
+                              : l
                           )
                         );
                       }}
                       className={`px-2 py-1 border rounded ${
-                        selectedLayer.bold ? 'bg-blue-500 text-white' : 'bg-white'
+                        selectedLayer.type === 'text' && selectedLayer.bold ? 'bg-blue-500 text-white' : 'bg-white'
                       }`}
                       title="Toggle Bold"
                     >
@@ -1655,12 +1657,14 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                       onClick={() => {
                         setLayers((prev: Layer[]) =>
                           prev.map((l) =>
-                            l.id === selectedLayer.id ? { ...l, italic: !l.italic } : l
+                            l.id === selectedLayer.id && l.type === 'text'
+                              ? { ...l, italic: !l.italic }
+                              : l
                           )
                         );
                       }}
                       className={`px-2 py-1 border rounded ${
-                        selectedLayer.italic ? 'bg-blue-500 text-white' : 'bg-white'
+                        selectedLayer.type === 'text' && selectedLayer.italic ? 'bg-blue-500 text-white' : 'bg-white'
                       }`}
                       title="Toggle Italic"
                     >
