@@ -1,0 +1,14 @@
+/* src/components/LayerList.module.css */
+.dropIndicator {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: blue;
+    top: var(--drop-indicator-top);
+  }
+  
+.active {
+  background-color: #d3eaff;
+  /* Optionally add more styling such as border, color etc. */
+}
