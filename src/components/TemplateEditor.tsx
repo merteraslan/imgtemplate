@@ -18,11 +18,11 @@ import { Image as ImageIcon, Type, Download, FileImage } from 'lucide-react';
 import styles from './TemplateEditor.module.css';
 import {
   Layer,
-  ImageLayer,
   TemplateData,
-  BoundingBox
+  BoundingBox,
+  ImageLayer
 } from '../types/templateTypes';
-import { resizeImage } from '../utils/imageUtils';
+import { resizeImage, fetchExternalImageAsDataURL, exportSvgToPng } from '../utils/imageUtils';
 import { canvasPresets, getUniqueLayerName } from '../utils/canvasUtils';
 // Import our dedicated TextLayer component for rendering text layers
 // import TextLayer from './TextLayer';
@@ -37,6 +37,14 @@ interface TemplateEditorProps {
   renderOnly?: boolean;
 }
 
+// Interface for the shape of the state saved to localStorage
+interface SavedState {
+  canvasWidth?: number;
+  canvasHeight?: number;
+  layers?: Partial<Layer>[]; // Use Partial<Layer> to allow for potentially incomplete data
+  backgroundImage?: string | null;
+}
+
 const TemplateEditor: React.FC<TemplateEditorProps> = ({
   width = 1080,
   height = 1080,
@@ -48,7 +56,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     canvasWidth: 1080,
     canvasHeight: 1080,
     backgroundImage:
-      'https://unsplash.com/photos/kLOuJrm-Wnk/download?ixid=M3wxMjA3fDB8MXxhbGx8MTB8fHx8fHx8fDE3MzkyNDI5Mzd8&force=true&w=1920.png',
+      'https://images.unsplash.com/photo-1603036050141-c61fde866f5c?auto=format&fit=crop&q=80',
     layers: [
       {
         id: 'layer_2',
@@ -111,45 +119,20 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
         borderWidth: 3,
         borderColor: '#ffffff',
         src: '',
-        lockAspectRatio: true
+        lockAspectRatio: true,
+        effect: 'none',
+        cornerRadius: 0
       }
     ]
   };
 
   const effectiveTemplateData = jsonData || defaultTemplateData;
 
-  // Initialize layers with background image if present
+  // Initialize layers
   const initializeLayers = useCallback(() => {
-    const templateLayers = effectiveTemplateData.layers || [];
-    if (effectiveTemplateData.backgroundImage) {
-      // Find existing background layer or create new one
-      const backgroundLayer: ImageLayer = {
-        id: 'background_layer',
-        type: 'image',
-        name: 'Background',
-        useColorFill: false,
-        fillColor: '#e0e0e0',
-        x: 0,
-        y: 0,
-        width: effectiveTemplateData.canvasWidth || width,
-        height: effectiveTemplateData.canvasHeight || height,
-        visible: true,
-        opacity: 1,
-        borderWidth: 0,
-        borderColor: '#000000',
-        src: effectiveTemplateData.backgroundImage,
-        lockAspectRatio: true
-      };
-
-      const existingBgIndex = templateLayers.findIndex(l => l.id === 'background_layer');
-      if (existingBgIndex >= 0) {
-        templateLayers[existingBgIndex] = backgroundLayer;
-      } else {
-        templateLayers.push(backgroundLayer);
-      }
-    }
-    return templateLayers;
-  }, [effectiveTemplateData, width, height]);
+    // Just use the layers from the template or default, background is handled separately
+    return effectiveTemplateData.layers || [];
+  }, [effectiveTemplateData]);
 
   // Canvas settings
   const [canvasWidth, setCanvasWidth] = useState<number>(
@@ -166,6 +149,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   );
   const [preset, setPreset] = useState<string>('1080x1080');
   const [zoom, setZoom] = useState<number>(0.5);
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(
+    effectiveTemplateData.backgroundImage || null
+  );
 
   // Layers and selection state
   const [layers, setLayers] = useState<Layer[]>(() => initializeLayers());
@@ -206,11 +192,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const svgRef = useRef<SVGSVGElement>(null);
   const resizeTimeoutRef = useRef<number | null>(null);
 
-  const [backgroundImage, setBackgroundImage] = useState<string | null>(
-    effectiveTemplateData.backgroundImage || null
-  );
-
-  // Layer pane drag and drop state
+  // Drag state for canvas elements (layers, resize handles)
   const [draggedLayerIndex, setDraggedLayerIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const layersContainerRef = useRef<HTMLDivElement>(null);
@@ -487,6 +469,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   );
   const handleDragEnd = useCallback((): void => {
     setDraggedLayer(null);
+    setResizeState(null); // Also clear resize state
     if (resizeTimeoutRef.current) {
       clearTimeout(resizeTimeoutRef.current);
       resizeTimeoutRef.current = null;
@@ -520,6 +503,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           color: '#000000',
           bold: false,
           italic: false,
+          textAlign: 'left',
           useBackground: false,
           backgroundColor: '#ffffff',
           bgPadding: 4
@@ -532,7 +516,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           height: 200,
           src: '',
           useColorFill: false,
-          fillColor: '#cccccc'
+          fillColor: '#cccccc',
+          effect: 'none',
+          cornerRadius: 0
         };
       } else {
         newLayer = {
@@ -575,10 +561,35 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (ev) => {
+      reader.onload = async (ev) => {
         try {
+          // Clear existing layers and selection before importing
+          setLayers([]);
+          setSelectedLayerId(null);
+
+          // Now process the imported data
           const data = JSON.parse(ev.target?.result as string);
-          if (data.layers) setLayers(data.layers);
+
+          // Process layers to handle placeholder texts
+          if (data.layers) {
+            const processedLayers = data.layers.map((layer: Layer) => {
+              if (layer.type === 'image') {
+                // Create a new object with processed properties
+                return {
+                  ...layer,
+                  // Handle image src placeholders
+                  src: typeof layer.src === 'string' && layer.src.startsWith('[Image:') ? '' : layer.src,
+                  // Ensure cornerRadius is set to 0 for backward compatibility
+                  cornerRadius: layer.cornerRadius === undefined ? 0 : layer.cornerRadius
+                };
+              }
+              return layer;
+            });
+            setLayers(processedLayers);
+          } else {
+            setLayers([]);
+          }
+
           if (data.canvasWidth) {
             setCanvasWidth(data.canvasWidth);
             setCanvasWidthInput(String(data.canvasWidth));
@@ -587,8 +598,15 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
             setCanvasHeight(data.canvasHeight);
             setCanvasHeightInput(String(data.canvasHeight));
           }
-          if (data.backgroundImage) setBackgroundImage(data.backgroundImage);
-        } catch {
+
+          // Handle background image, removing placeholder text
+          if (data.backgroundImage && data.backgroundImage !== '[Background Image]') {
+            setBackgroundImage(data.backgroundImage);
+          } else {
+            setBackgroundImage(null);
+          }
+        } catch (error) {
+          console.error('Error importing JSON:', error);
           alert('Invalid JSON file.');
         }
       };
@@ -599,12 +617,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const exportPlaceholderData = useCallback(() => ({
     canvasWidth,
     canvasHeight,
-    backgroundImage: backgroundImage ? '[Background Image]' : null,
+    backgroundImage: backgroundImage ? backgroundImage : null,
     layers: layers.map((layer: Layer) => {
       if (layer.type === 'image') {
+        // Only keep actual image data URLs or empty strings
         return {
           ...layer,
-          src: layer.src ? `[Image: ${layer.name || 'unnamed image'}]` : ''
+          src: layer.src && !layer.src.startsWith('[Image:') ? layer.src : ''
         };
       }
       return layer;
@@ -624,43 +643,30 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     URL.revokeObjectURL(url);
   }, [exportPlaceholderData]);
 
-  const handleExportPNG = useCallback((): void => {
+  const handleExportPNG = useCallback(async (): Promise<void> => {
     if (!svgRef.current) return;
-    const clonedSvg = svgRef.current.cloneNode(true) as SVGSVGElement;
-    clonedSvg.removeAttribute('style');
-    clonedSvg.setAttribute('width', String(canvasWidth));
-    clonedSvg.setAttribute('height', String(canvasHeight));
-    const serializer = new XMLSerializer();
-    const svgString = serializer.serializeToString(clonedSvg);
-    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = canvasWidth;
-      canvas.height = canvasHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
-      }
-      URL.revokeObjectURL(url);
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const pngUrl = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = pngUrl;
-          link.download = 'template.png';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(pngUrl);
-        }
-      });
-    };
-    img.src = url;
-  }, [canvasWidth, canvasHeight]);
+
+    try {
+      // Use the new utility function for export
+      const pngDataUrl = await exportSvgToPng(
+        svgRef.current,
+        canvasWidth,
+        canvasHeight,
+        layers // Pass the actual layers data 
+      );
+
+      // Create download link
+      const link = document.createElement('a');
+      link.href = pngDataUrl;
+      link.download = 'template.png';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error exporting PNG:', error);
+      alert('Failed to export PNG. Please ensure all images are properly loaded.');
+    }
+  }, [canvasWidth, canvasHeight, layers]);
 
   // --- Canvas Size Input Handlers ---
   const handleCanvasWidthChange = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -730,8 +736,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     setPreset(matchingPreset ? matchingPreset.value : '');
   }, [canvasWidth, canvasHeight]);
 
+  // Effect to SAVE state to localStorage whenever relevant state changes
   useEffect(() => {
-    const stateToSave = {
+    const stateToSave: SavedState = {
       canvasWidth,
       canvasHeight,
       layers,
@@ -739,26 +746,147 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     };
     localStorage.setItem('templateEditorState', JSON.stringify(stateToSave));
   }, [canvasWidth, canvasHeight, layers, backgroundImage]);
+
+  // Helper function to validate and sanitize numbers (reusable)
+  const sanitizeNumber = (value: unknown, defaultValue = 0, allowZero = true, min?: number, max?: number): number => {
+    let num = Number(value);
+    if (isNaN(num) || !isFinite(num) || (!allowZero && num === 0)) {
+      num = defaultValue;
+    }
+    if (min !== undefined) num = Math.max(min, num);
+    if (max !== undefined) num = Math.min(max, num);
+    return num;
+  };
+
+  // Helper function to validate a single layer (takes Partial<Layer>, returns type predicate)
+  const isValidLayer = (layer: Partial<Layer>): layer is Layer => {
+    if (!layer || typeof layer !== 'object' || !layer.id || !layer.type) return false;
+
+    // Sanitize and assign values, ensuring they exist on the object
+    layer.x = sanitizeNumber(layer.x, 0);
+    layer.y = sanitizeNumber(layer.y, 0);
+    layer.width = sanitizeNumber(layer.width, 50, true, 1); // Min width 1
+    layer.height = sanitizeNumber(layer.height, 20, true, 1); // Min height 1
+    layer.opacity = sanitizeNumber(layer.opacity, 1, true, 0, 1); // Opacity 0-1
+    layer.borderWidth = sanitizeNumber(layer.borderWidth, 0, true, 0);
+    layer.lockAspectRatio = !!layer.lockAspectRatio;
+    layer.visible = layer.visible !== undefined ? !!layer.visible : true; // Default visible to true if undefined
+
+    // Ensure required string properties exist and are strings
+    if (typeof layer.name !== 'string') layer.name = `Layer ${layer.id.substring(0, 4)}`; // Default name
+
+    // Type-specific validation
+    if (layer.type === 'text') {
+      layer.size = sanitizeNumber(layer.size, 12, false, 1); // Min size 1, non-zero
+      layer.bgPadding = sanitizeNumber(layer.bgPadding, 0, true, 0);
+      if (typeof layer.text !== 'string') layer.text = 'Invalid Text';
+      if (typeof layer.font !== 'string') layer.font = 'Arial';
+      if (typeof layer.color !== 'string') layer.color = '#000000';
+      if (typeof layer.backgroundColor !== 'string') layer.backgroundColor = '#ffffff'; // Default background color
+      layer.bold = !!layer.bold;
+      layer.italic = !!layer.italic;
+      layer.useBackground = !!layer.useBackground;
+      if (layer.textAlign && !['left', 'center', 'right'].includes(layer.textAlign)) {
+        layer.textAlign = 'left';
+      }
+      // Check if all required properties for TextLayer exist after potential sanitization
+      return typeof layer.text === 'string' &&
+        typeof layer.font === 'string' &&
+        typeof layer.size === 'number' &&
+        typeof layer.color === 'string' &&
+        typeof layer.backgroundColor === 'string' && // Added check
+        typeof layer.bgPadding === 'number' && // Added check
+        typeof layer.bold === 'boolean' && // Added check
+        typeof layer.italic === 'boolean' && // Added check
+        typeof layer.useBackground === 'boolean'; // Added check
+
+    } else if (layer.type === 'image') {
+      if (typeof layer.src !== 'string') layer.src = '';
+      if (typeof layer.fillColor !== 'string') layer.fillColor = '#cccccc';
+      layer.useColorFill = !!layer.useColorFill;
+      // Make sure effect property is valid - default to 'none'
+      if (layer.effect === undefined || layer.effect === null) layer.effect = 'none';
+      // Ensure cornerRadius is a valid number - explicitly set to 0 if undefined
+      layer.cornerRadius = layer.cornerRadius === undefined ? 0 : sanitizeNumber(layer.cornerRadius, 0, true, 0);
+      // Check if all required properties for ImageLayer exist
+      return typeof layer.src === 'string' &&
+        typeof layer.fillColor === 'string' &&
+        typeof layer.useColorFill === 'boolean' &&
+        typeof layer.cornerRadius === 'number' &&
+        (layer.effect === null || ['none', 'dots', 'lines', 'waves', 'grid', 'checkerboard'].includes(layer.effect));
+
+    } else if (layer.type === 'shape') {
+      layer.strokeWidth = sanitizeNumber(layer.strokeWidth, 0, true, 0);
+      if (typeof layer.fillColor !== 'string') layer.fillColor = '#cccccc';
+      if (typeof layer.strokeColor !== 'string') layer.strokeColor = '#000000';
+      // Check if all required properties for ShapeLayer exist
+      return typeof layer.fillColor === 'string' &&
+        typeof layer.strokeColor === 'string' &&
+        typeof layer.strokeWidth === 'number';
+
+    } else {
+      // Unknown layer type
+      return false;
+    }
+  };
+
+  // Effect to LOAD state from localStorage ON MOUNT
   useEffect(() => {
     const saved = localStorage.getItem('templateEditorState');
     if (saved) {
       try {
-        const state = JSON.parse(saved);
-        if (state.layers) setLayers(state.layers);
-        if (state.canvasWidth) {
-          setCanvasWidth(state.canvasWidth);
-          setCanvasWidthInput(String(state.canvasWidth));
+        const state: SavedState = JSON.parse(saved);
+
+        // Validate and sanitize canvas dimensions
+        const initialWidth = sanitizeNumber(state.canvasWidth, width, false, 10);
+        const initialHeight = sanitizeNumber(state.canvasHeight, height, false, 10);
+        setCanvasWidth(initialWidth);
+        setCanvasWidthInput(String(initialWidth));
+        setCanvasHeight(initialHeight);
+        setCanvasHeightInput(String(initialHeight));
+
+        // Validate and sanitize layers
+        if (Array.isArray(state.layers)) {
+          // Process layers for backward compatibility
+          const processedLayers = state.layers.map(layer => {
+            // Ensure image layers have cornerRadius property for backward compatibility
+            if (layer.type === 'image' && layer.cornerRadius === undefined) {
+              return { ...layer, cornerRadius: 0 };
+            }
+            return layer;
+          });
+
+          const validLayers = processedLayers.filter(isValidLayer);
+          if (validLayers.length !== state.layers.length) {
+            console.warn('Some layers from localStorage were invalid and have been removed or sanitized.');
+          }
+          // Explicitly cast to Layer[] because filter with type predicate should guarantee this
+          setLayers(validLayers as Layer[]);
+        } else {
+          console.warn('No valid layers array found in localStorage.');
+          setLayers([]); // Set to empty array if layers are not an array
         }
-        if (state.canvasHeight) {
-          setCanvasHeight(state.canvasHeight);
-          setCanvasHeightInput(String(state.canvasHeight));
-        }
-        if (state.backgroundImage) setBackgroundImage(state.backgroundImage);
+
+        setBackgroundImage(typeof state.backgroundImage === 'string' ? state.backgroundImage : null);
+
       } catch (e) {
-        console.error('Error loading state', e);
+        console.error('Error loading or validating state from localStorage:', e);
+        // Fallback to initial props/defaults if loading/validation fails
+        setCanvasWidth(width);
+        setCanvasWidthInput(String(width));
+        setCanvasHeight(height);
+        setCanvasHeightInput(String(height));
+        setLayers(initializeLayers()); // Use callback to get initial layers
+        setBackgroundImage(effectiveTemplateData.backgroundImage || null);
       }
+    } else {
+      // No saved state, set input fields based on initial state derived from props/defaults
+      setCanvasWidthInput(String(canvasWidth));
+      setCanvasHeightInput(String(canvasHeight));
     }
-  }, []);
+    // This effect should run only once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // <--- Correct empty dependency array
 
   const handleSelectLayer = (id: string) => {
     setActiveLayerId(id);
@@ -773,8 +901,116 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     );
   }, [selectedLayer]);
 
+  // Add handler for background image URL change
+  const handleBackgroundImageChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setBackgroundImage(e.target.value);
+  };
+  const handleClearBackgroundImage = () => {
+    setBackgroundImage(null);
+  };
+
+  // Add new effect to convert external image URLs to data URLs
+  useEffect(() => {
+    const convertImageUrlsToDataUrls = async () => {
+      // Check if we have a background image that needs converting
+      if (backgroundImage && backgroundImage.startsWith('http')) {
+        try {
+          console.log('Converting background image to data URL');
+          const dataUrl = await fetchExternalImageAsDataURL(backgroundImage);
+          setBackgroundImage(dataUrl);
+        } catch (error) {
+          console.error('Failed to convert background image', error);
+        }
+      }
+
+      // Check image layers
+      const layersWithExternalImages = layers.filter(
+        layer => layer.type === 'image' && (layer as ImageLayer).src && (layer as ImageLayer).src.startsWith('http')
+      );
+
+      if (layersWithExternalImages.length > 0) {
+        for (const layer of layersWithExternalImages) {
+          try {
+            console.log(`Converting image for layer ${layer.id} to data URL`);
+            const dataUrl = await fetchExternalImageAsDataURL((layer as ImageLayer).src as string);
+            setLayers(prev =>
+              prev.map(l => l.id === layer.id ? { ...l, src: dataUrl } : l)
+            );
+          } catch (error) {
+            console.error(`Failed to convert image for layer ${layer.id}`, error);
+          }
+        }
+      }
+    };
+
+    // Only run this effect when not in renderOnly mode (i.e., in edit mode)
+    if (!renderOnly) {
+      convertImageUrlsToDataUrls();
+    }
+  }, [backgroundImage, layers, renderOnly]);
+
+  // Add the handler for effect change
+  const handleEffectChange = useCallback(
+    (value: 'none' | 'dots' | 'lines' | 'waves' | 'grid' | 'checkerboard' | null): void => {
+      if (!selectedLayer || selectedLayer.type !== 'image') return;
+      setLayers((prevLayers) =>
+        prevLayers.map((layer) =>
+          layer.id === selectedLayer.id
+            ? { ...layer, effect: value } as ImageLayer
+            : layer
+        )
+      );
+    },
+    [selectedLayer]
+  );
+
+  // Add the handler for corner radius change
+  const handleCornerRadiusChange = useCallback(
+    (value: number): void => {
+      if (!selectedLayer || selectedLayer.type !== 'image') return;
+      setLayers((prevLayers) =>
+        prevLayers.map((layer) =>
+          layer.id === selectedLayer.id
+            ? { ...layer, cornerRadius: value } as ImageLayer
+            : layer
+        )
+      );
+    },
+    [selectedLayer]
+  );
+
+  // Add the handler for border width change
+  const handleBorderWidthChange = useCallback(
+    (value: number): void => {
+      if (!selectedLayer) return;
+      setLayers((prevLayers) =>
+        prevLayers.map((layer) =>
+          layer.id === selectedLayer.id
+            ? { ...layer, borderWidth: value }
+            : layer
+        )
+      );
+    },
+    [selectedLayer]
+  );
+
+  // Add the handler for border color change
+  const handleBorderColorChange = useCallback(
+    (value: string): void => {
+      if (!selectedLayer) return;
+      setLayers((prevLayers) =>
+        prevLayers.map((layer) =>
+          layer.id === selectedLayer.id
+            ? { ...layer, borderColor: value }
+            : layer
+        )
+      );
+    },
+    [selectedLayer]
+  );
+
   return (
-    <div className="flex gap-4 p-4 w-full">
+    <div className="flex gap-4 p-4 w-full h-[calc(100vh-4rem)]"> {/* Adjust height as needed */}
       <div className="flex flex-col gap-4 w-80">
         <Card className="p-4">
           <h3 className="text-lg font-bold mb-2">Canvas Settings</h3>
@@ -817,8 +1053,28 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               className="mt-1 block w-full border-gray-300 rounded-md"
             />
           </div>
+          {/* Background Image Control */}
+          <div className="mb-2">
+            <label className="block text-sm font-medium">Background Image URL (Optional)</label>
+            <input
+              type="url"
+              placeholder="Enter image URL"
+              value={backgroundImage || ''}
+              onChange={handleBackgroundImageChange}
+              className="mt-1 block w-full border-gray-300 rounded-md text-xs"
+              aria-label="Background image URL"
+            />
+            {backgroundImage && (
+              <button
+                onClick={handleClearBackgroundImage}
+                className="text-xs text-red-500 hover:text-red-700 mt-1"
+              >
+                Clear Background
+              </button>
+            )}
+          </div>
         </Card>
-        <Card className="p-4">
+        <Card className="p-4 flex-1 overflow-y-auto">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold">Layers</h2>
             <div className="flex gap-2">
@@ -876,9 +1132,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           </div>
         </Card>
       </div>
-      <div className="flex-1">
+      <div className="flex-1 flex flex-col">
         <Card className="p-4">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex justify-between items-center mb-4 px-4 pt-4">
             <h2 className="text-xl font-bold">Preview</h2>
             <div className="flex items-center gap-2">
               <button
@@ -946,11 +1202,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 }}
                 onMouseUp={() => {
                   handleDragEnd();
-                  setResizeState(null);
                 }}
                 onMouseLeave={() => {
                   handleDragEnd();
-                  setResizeState(null);
                 }}
                 handleDragStart={handleDragStart}
                 handleResizeStart={handleResizeStart}
@@ -962,9 +1216,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           </div>
         </Card>
       </div>
-      <div className="w-64 flex-shrink-0">
+      <div className="w-64 flex-shrink-0 flex flex-col">
         {selectedLayer ? (
-          <Card className="p-4">
+          <Card className="p-4 flex-1 overflow-y-auto">
             <LayerProperties
               selectedLayer={selectedLayer}
               layerNameInput={layerNameInput}
@@ -1023,6 +1277,15 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                   prev.map((l) =>
                     l.id === selectedLayer.id && l.type === 'text'
                       ? { ...l, italic: !l.italic }
+                      : l
+                  )
+                )
+              }
+              onTextAlignChange={(value: 'left' | 'center' | 'right') =>
+                setLayers((prev) =>
+                  prev.map((l) =>
+                    l.id === selectedLayer.id && l.type === 'text'
+                      ? { ...l, textAlign: value }
                       : l
                   )
                 )
@@ -1138,7 +1401,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                       )
                     );
                   } catch {
-                    console.error('Error processing image:');
+                    console.error('Error processing image');
                   }
                 }
               }}
@@ -1232,10 +1495,21 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               layersForAlignment={layers.filter((l) => l.id !== selectedLayer.id)}
               layerWidthInput={layerWidthInput}
               layerHeightInput={layerHeightInput}
+              onOpacityChange={(value: number) =>
+                setLayers((prev) =>
+                  prev.map((l) =>
+                    l.id === selectedLayer.id ? { ...l, opacity: Math.max(0, Math.min(1, value)) } : l
+                  )
+                )
+              }
+              onEffectChange={handleEffectChange}
+              onCornerRadiusChange={handleCornerRadiusChange}
+              onBorderWidthChange={handleBorderWidthChange}
+              onBorderColorChange={handleBorderColorChange}
             />
           </Card>
         ) : (
-          <Card className="p-4">
+          <Card className="p-4 flex-shrink-0"> {/* Prevent empty card from collapsing */}
             <h3 className="text-lg font-bold">No Layer Selected</h3>
           </Card>
         )}

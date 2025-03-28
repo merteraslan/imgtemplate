@@ -11,7 +11,10 @@ import {
   AlignCenterVertical,
   AlignEndVertical,
   Lock,
-  Unlock
+  Unlock,
+  AlignHorizontalJustifyCenter,
+  AlignHorizontalJustifyStart,
+  AlignHorizontalJustifyEnd
 } from 'lucide-react';
 
 interface LayerPropertiesProps {
@@ -26,6 +29,7 @@ interface LayerPropertiesProps {
   onColorChange?: (value: string) => void;
   onToggleBold?: () => void;
   onToggleItalic?: () => void;
+  onTextAlignChange?: (value: 'left' | 'center' | 'right') => void;
   onToggleBackground?: (checked: boolean) => void;
   onBackgroundColorChange?: (value: string) => void;
   onBackgroundPaddingChange?: (value: number) => void;
@@ -49,11 +53,17 @@ interface LayerPropertiesProps {
   onFileChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onToggleColorFill?: (checked: boolean) => void;
   onFillColorChange?: (value: string) => void;
+  onEffectChange?: (value: 'none' | 'dots' | 'lines' | 'waves' | 'grid' | 'checkerboard' | null) => void;
+  onCornerRadiusChange?: (value: number) => void;
+  onBorderWidthChange?: (value: number) => void;
+  onBorderColorChange?: (value: string) => void;
   // Alignment settings:
   onAlignHorizontally?: (direction: 'left' | 'center' | 'right') => void;
   onAlignVertically?: (direction: 'top' | 'middle' | 'bottom') => void;
   alignTargetLayerId: string;
   onAlignTargetChange?: (value: string) => void;
+  // Opacity control
+  onOpacityChange?: (value: number) => void;
   // A list of layers available for alignment
   layersForAlignment?: Layer[];
   onToggleAspectRatio?: () => void;
@@ -70,6 +80,7 @@ const LayerProperties: React.FC<LayerPropertiesProps> = ({
   onColorChange,
   onToggleBold,
   onToggleItalic,
+  onTextAlignChange,
   onToggleBackground,
   onBackgroundColorChange,
   onBackgroundPaddingChange,
@@ -89,10 +100,15 @@ const LayerProperties: React.FC<LayerPropertiesProps> = ({
   onFileChange,
   onToggleColorFill,
   onFillColorChange,
+  onEffectChange,
+  onCornerRadiusChange,
+  onBorderWidthChange,
+  onBorderColorChange,
   onAlignHorizontally,
   onAlignVertically,
   alignTargetLayerId,
   onAlignTargetChange,
+  onOpacityChange,
   layersForAlignment,
   onToggleAspectRatio
 }) => {
@@ -181,6 +197,35 @@ const LayerProperties: React.FC<LayerPropertiesProps> = ({
             </div>
           </div>
           <div className="mb-2">
+            <label className="block text-sm font-medium">Text Alignment</label>
+            <div className="flex gap-1 mt-1">
+              <button
+                onClick={() => onTextAlignChange && onTextAlignChange('left')}
+                className={`p-1 border rounded hover:bg-gray-100 ${(textLayer.textAlign === 'left' || !textLayer.textAlign) ? 'bg-blue-100' : 'bg-white'
+                  }`}
+                title="Align Text Left"
+              >
+                <AlignHorizontalJustifyStart size={16} />
+              </button>
+              <button
+                onClick={() => onTextAlignChange && onTextAlignChange('center')}
+                className={`p-1 border rounded hover:bg-gray-100 ${textLayer.textAlign === 'center' ? 'bg-blue-100' : 'bg-white'
+                  }`}
+                title="Align Text Center"
+              >
+                <AlignHorizontalJustifyCenter size={16} />
+              </button>
+              <button
+                onClick={() => onTextAlignChange && onTextAlignChange('right')}
+                className={`p-1 border rounded hover:bg-gray-100 ${textLayer.textAlign === 'right' ? 'bg-blue-100' : 'bg-white'
+                  }`}
+                title="Align Text Right"
+              >
+                <AlignHorizontalJustifyEnd size={16} />
+              </button>
+            </div>
+          </div>
+          <div className="mb-2">
             <label className="block text-sm font-medium">Background Options</label>
             <div className="flex items-center gap-2 mt-1">
               <input
@@ -259,13 +304,71 @@ const LayerProperties: React.FC<LayerPropertiesProps> = ({
               <span className="text-sm">Use Color Fill</span>
             </div>
             {imageLayer.useColorFill && (
+              <>
+                <div className="mt-2">
+                  <label className="block text-xs text-gray-500">Fill Color</label>
+                  <input
+                    type="color"
+                    value={imageLayer.fillColor}
+                    onChange={(e) => onFillColorChange && onFillColorChange(e.target.value)}
+                    aria-label="Layer fill color"
+                    className="mt-1 block w-full border-gray-300 rounded-md"
+                  />
+                </div>
+                <div className="mt-2">
+                  <label className="block text-xs text-gray-500">Pattern Effect</label>
+                  <select
+                    value={imageLayer.effect || 'none'}
+                    onChange={(e) => onEffectChange && onEffectChange(e.target.value as 'none' | 'dots' | 'lines' | 'waves' | 'grid' | 'checkerboard' | null)}
+                    aria-label="Layer pattern effect"
+                    className="mt-1 block w-full border-gray-300 rounded-md"
+                  >
+                    <option value="none">None</option>
+                    <option value="dots">Dots</option>
+                    <option value="lines">Lines</option>
+                    <option value="waves">Waves</option>
+                    <option value="grid">Grid</option>
+                    <option value="checkerboard">Checkerboard</option>
+                  </select>
+                </div>
+              </>
+            )}
+            <div className="mt-2">
+              <label className="block text-xs text-gray-500">Corner Radius</label>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={imageLayer.cornerRadius}
+                onChange={(e) => onCornerRadiusChange && onCornerRadiusChange(parseInt(e.target.value))}
+                aria-label="Corner radius"
+                className="mt-1 block w-full"
+              />
+              <span className="text-xs text-gray-500">{imageLayer.cornerRadius}px</span>
+            </div>
+            <div className="mt-2">
+              <label className="block text-xs text-gray-500">Border Width</label>
+              <input
+                type="range"
+                min="0"
+                max="20"
+                step="1"
+                value={imageLayer.borderWidth}
+                onChange={(e) => onBorderWidthChange && onBorderWidthChange(parseInt(e.target.value))}
+                aria-label="Border width"
+                className="mt-1 block w-full"
+              />
+              <span className="text-xs text-gray-500">{imageLayer.borderWidth}px</span>
+            </div>
+            {imageLayer.borderWidth > 0 && (
               <div className="mt-2">
-                <label className="block text-xs text-gray-500">Fill Color</label>
+                <label className="block text-xs text-gray-500">Border Color</label>
                 <input
                   type="color"
-                  value={imageLayer.fillColor}
-                  onChange={(e) => onFillColorChange && onFillColorChange(e.target.value)}
-                  aria-label="Layer fill color"
+                  value={imageLayer.borderColor}
+                  onChange={(e) => onBorderColorChange && onBorderColorChange(e.target.value)}
+                  aria-label="Border color"
                   className="mt-1 block w-full border-gray-300 rounded-md"
                 />
               </div>
@@ -273,6 +376,20 @@ const LayerProperties: React.FC<LayerPropertiesProps> = ({
           </div>
         </>
       )}
+      <div className="mb-2">
+        <label className="block text-sm font-medium">Opacity</label>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={selectedLayer.opacity ?? 1}
+          onChange={(e) => onOpacityChange && onOpacityChange(parseFloat(e.target.value))}
+          aria-label="Layer opacity"
+          className="mt-1 block w-full"
+        />
+        <span className="text-xs text-gray-500">{(selectedLayer.opacity ?? 1).toFixed(2)}</span>
+      </div>
       <div className="mb-2">
         <label className="block text-sm font-medium">Dimensions</label>
         <div className="flex items-center gap-2">

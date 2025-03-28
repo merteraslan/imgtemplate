@@ -24,13 +24,24 @@ const BoundingBox: React.FC<BoundingBoxProps> = React.memo(({ layer, onResizeSta
     height: layer.height
   };
 
+  // Ensure width and height are valid numbers >= 0, default to 0 if not
+  const safeX = typeof box.x === 'number' && isFinite(box.x) ? box.x : 0;
+  const safeY = typeof box.y === 'number' && isFinite(box.y) ? box.y : 0;
+  const safeWidth = typeof box.width === 'number' && isFinite(box.width) && box.width >= 0 ? box.width : 0;
+  const safeHeight = typeof box.height === 'number' && isFinite(box.height) && box.height >= 0 ? box.height : 0;
+
+  // Prevent rendering if dimensions are invalid (optional, but good practice)
+  // if (safeWidth <= 0 || safeHeight <= 0) {
+  //   return null;
+  // }
+
   return (
     <g>
       <rect
-        x={box.x - 2}
-        y={box.y - 2}
-        width={box.width + 4}
-        height={box.height + 4}
+        x={safeX - 2}
+        y={safeY - 2}
+        width={safeWidth + 4}
+        height={safeHeight + 4}
         fill="none"
         stroke="#00F"
         strokeWidth="1"
@@ -40,20 +51,20 @@ const BoundingBox: React.FC<BoundingBoxProps> = React.memo(({ layer, onResizeSta
         <circle
           key={pos}
           cx={
-            box.x +
+            safeX +
             (pos.includes('e')
-              ? box.width
+              ? safeWidth
               : pos.includes('w')
-              ? 0
-              : box.width / 2)
+                ? 0
+                : safeWidth / 2) // Use safeWidth
           }
           cy={
-            box.y +
+            safeY +
             (pos.includes('s')
-              ? box.height
+              ? safeHeight
               : pos.includes('n')
-              ? 0
-              : box.height / 2)
+                ? 0
+                : safeHeight / 2) // Use safeHeight
           }
           r="4"
           fill="#00F"

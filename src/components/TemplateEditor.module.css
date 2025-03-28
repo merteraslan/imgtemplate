@@ -46,19 +46,18 @@
 
 .previewContainer {
   position: relative;
-  overflow: hidden;
+  overflow: auto;
   background-color: #f0f0f0;
-  width: 1080px;
-  height: 1080px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .svgContainer {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
   background-color: white;
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  margin: auto;
 }
 
 .layerPreview {

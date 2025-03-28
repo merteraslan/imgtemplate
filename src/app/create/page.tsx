@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { ArrowLeft, FileImage } from 'lucide-react';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import TemplateEditor from '@/components/TemplateEditor';
 import html2canvas from 'html2canvas';
-import { TemplateData } from '@/types/templateTypes';
+import { TemplateData, ImageLayer } from '@/types/templateTypes';
+import { fetchExternalImageAsDataURL } from '@/utils/imageUtils';
 
 const JsonUploader = ({ onDataLoaded }: { onDataLoaded: (data: unknown) => void }) => {
   const [error, setError] = useState<string>('');
@@ -99,6 +100,51 @@ export default function CreatePage() {
     }
   };
 
+  useEffect(() => {
+    const convertExternalImagesToDataUrls = async () => {
+      if (!jsonData) return;
+
+      let dataChanged = false;
+      const updatedData = { ...jsonData };
+
+      if (updatedData.backgroundImage && updatedData.backgroundImage.startsWith('http')) {
+        try {
+          console.log('Converting background image to data URL');
+          updatedData.backgroundImage = await fetchExternalImageAsDataURL(updatedData.backgroundImage);
+          dataChanged = true;
+        } catch (error) {
+          console.error('Failed to convert background image:', error);
+        }
+      }
+
+      if (updatedData.layers && updatedData.layers.length > 0) {
+        for (let i = 0; i < updatedData.layers.length; i++) {
+          const layer = updatedData.layers[i];
+          if (layer.type === 'image' && (layer as ImageLayer).src && (layer as ImageLayer).src.startsWith('http')) {
+            try {
+              console.log(`Converting image for layer ${layer.id} to data URL`);
+              const imgLayer = layer as ImageLayer;
+              updatedData.layers[i] = {
+                ...imgLayer,
+                src: await fetchExternalImageAsDataURL(imgLayer.src)
+              };
+              dataChanged = true;
+            } catch (error) {
+              console.error(`Failed to convert image for layer ${layer.id}:`, error);
+            }
+          }
+        }
+      }
+
+      if (dataChanged) {
+        console.log('Updated jsonData with data URLs');
+        setJsonData(updatedData);
+      }
+    };
+
+    convertExternalImagesToDataUrls();
+  }, [jsonData]);
+
   const handleDownloadImage = async () => {
     if (!editorRef.current || !jsonData) {
       console.error('Editor reference or JSON data not available.');
@@ -117,10 +163,18 @@ export default function CreatePage() {
         height: jsonData.canvasHeight,
         x: 0,
         y: 0,
-        scale: 1,
+        scale: 2,
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
+        foreignObjectRendering: false,
+        imageTimeout: 15000,
         backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          const images = clonedDoc.querySelectorAll('image');
+          images.forEach(img => {
+            img.setAttribute('crossorigin', 'anonymous');
+          });
+        },
         logging: process.env.NODE_ENV === 'development',
       });
 
@@ -182,10 +236,12 @@ export default function CreatePage() {
 
         {jsonData ? (
           <div className="bg-white rounded-lg border">
-            <div ref={editorRef} className="p-4 pb-2 inline-block align-top" style={{ width: jsonData.canvasWidth, height: jsonData.canvasHeight }}>
+            <div ref={editorRef} style={{ width: jsonData.canvasWidth, height: jsonData.canvasHeight, overflow: 'hidden', position: 'relative' }}>
               <TemplateEditor
                 jsonData={jsonData}
                 renderOnly={true}
+                width={jsonData.canvasWidth}
+                height={jsonData.canvasHeight}
               />
             </div>
             <div className="border-t p-2 flex justify-end">

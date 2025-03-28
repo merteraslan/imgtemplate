@@ -23,6 +23,7 @@ export interface TextLayer extends BaseLayer {
   color: string;
   bold: boolean;
   italic: boolean;
+  textAlign?: 'left' | 'center' | 'right';
   useBackground: boolean;
   backgroundColor: string;
   bgPadding: number;
@@ -33,6 +34,8 @@ export interface ImageLayer extends BaseLayer {
   src: string;
   useColorFill: boolean;
   fillColor: string;
+  effect: 'none' | 'dots' | 'lines' | 'waves' | 'grid' | 'checkerboard' | null;
+  cornerRadius: number;
 }
 
 export interface ShapeLayer extends BaseLayer {
