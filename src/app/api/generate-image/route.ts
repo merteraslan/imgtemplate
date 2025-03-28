@@ -1,27 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TemplateData } from '@/types/templateTypes';
-import * as playwright from 'playwright';
+import puppeteer from 'puppeteer';
 
 // Function that draws the image directly in Node.js using canvas
 async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> {
-  // Initialize browser for headless rendering with CORS disabled for testing
-  const browser = await playwright.chromium.launch({ 
-    headless: true,
+  // Initialize browser for headless rendering with specific configs for Vercel serverless
+  const browser = await puppeteer.launch({ 
+    headless: true, // Use headless mode
     args: [
-      '--disable-web-security',  // Disable CORS for testing
+      '--disable-web-security',
       '--allow-file-access-from-files',
       '--allow-file-access',
-      '--disable-features=IsolateOrigins,site-per-process'
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage', // Recommended for serverless
+      '--single-process' // Better for serverless environments
     ]
   });
   
   try {
-    const context = await browser.newContext({
-      bypassCSP: true, // Bypass Content-Security-Policy
-      javaScriptEnabled: true
-    });
+    const page = await browser.newPage();
     
-    const page = await context.newPage();
+    // Enable JavaScript
+    await page.setJavaScriptEnabled(true);
+    
+    // Set viewport size
+    await page.setViewport({
+      width: templateData.canvasWidth ?? 1080,
+      height: templateData.canvasHeight ?? 1080,
+      deviceScaleFactor: 2 // For higher quality
+    });
     
     // Create a simple HTML page with a canvas
     const html = `
@@ -657,6 +666,17 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
 }
 
 export async function POST(req: NextRequest) {
+  // Validate API key
+  const apiKey = req.headers.get('x-api-key');
+  const validApiKey = process.env.API_KEY;
+  
+  if (!validApiKey || apiKey !== validApiKey) {
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+  
   // Allow CORS
   const allowedOrigins = [
     'http://localhost:3000', 
@@ -674,41 +694,13 @@ export async function POST(req: NextRequest) {
       headers: {
         'Access-Control-Allow-Origin': allowOrigin,
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
         'Access-Control-Max-Age': '86400' // 24 hours
       }
     });
   }
   
   try {
-    // --- Authorization Check START ---
-    const authorizationHeader = req.headers.get('authorization');
-    const expectedToken = process.env.API_SECRET_TOKEN;
-
-    if (!expectedToken) {
-      // Log an error on the server if the token is not configured
-      console.error('API_SECRET_TOKEN environment variable is not set.');
-      // Return a generic 500 error to avoid leaking information
-      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-    }
-
-    if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Missing or invalid Authorization header' },
-        { status: 401 }
-      );
-    }
-
-    const providedToken = authorizationHeader.substring(7); // Remove "Bearer " prefix
-
-    if (providedToken !== expectedToken) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Invalid token' },
-        { status: 401 }
-      );
-    }
-    // --- Authorization Check END ---
-
     // Extract query parameters
     const { searchParams } = new URL(req.url);
     const debug = searchParams.get('debug') === 'true';
