@@ -65,4 +65,74 @@ export async function downloadImageFromAPI(
     console.error('Error downloading image:', error);
     throw error;
   }
-} 
+}
+
+/**
+ * Generate an image using the API with proper authentication
+ * @param templateData The template data to send to the API
+ * @returns The response from the API
+ */
+export async function generateImageViaApi(templateData: TemplateData): Promise<Response> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api/generate-image';
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('API key is not configured');
+  }
+
+  // Make the authenticated API request
+  return fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey
+    },
+    body: JSON.stringify(templateData)
+  });
+}
+
+/**
+ * Generate an image and return it as a blob for display or download
+ * @param templateData The template data for the image
+ * @returns A Promise that resolves to a Blob containing the image
+ */
+export async function generateImageAsBlob(templateData: TemplateData): Promise<Blob> {
+  const response = await generateImageViaApi(templateData);
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(`Failed to generate image: ${errorData.error || response.statusText}`);
+  }
+  
+  return response.blob();
+}
+
+/**
+ * Generate an image and return it as a data URL for display in an image element
+ * @param templateData The template data for the image
+ * @returns A Promise that resolves to a data URL string
+ */
+export async function generateImageAsDataURL(templateData: TemplateData): Promise<string> {
+  const blob = await generateImageAsBlob(templateData);
+  return URL.createObjectURL(blob);
+}
+
+// Example usage in a component:
+/*
+import { generateImageAsDataURL } from "@/utils/apiUtils";
+
+// In your component:
+const [imageUrl, setImageUrl] = useState<string | null>(null);
+
+const handleGenerateImage = async () => {
+  try {
+    setLoading(true);
+    const dataUrl = await generateImageAsDataURL(templateData);
+    setImageUrl(dataUrl);
+  } catch (error) {
+    console.error("Error generating image:", error);
+  } finally {
+    setLoading(false);
+  }
+};
+*/ 

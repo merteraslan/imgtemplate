@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TemplateData } from '@/types/templateTypes';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
+
+// Configure route segment for longer processing
+export const maxDuration = 60; // 60 seconds timeout
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 // Function that draws the image directly in Node.js using canvas
 async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> {
   // Initialize browser for headless rendering with specific configs for Vercel serverless
-  const browser = await puppeteer.launch({ 
-    headless: true, // Use headless mode
+  const browser = await puppeteer.launch({
+    headless: true,
     args: [
       '--disable-web-security',
       '--allow-file-access-from-files',
@@ -14,9 +20,15 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
       '--disable-features=IsolateOrigins,site-per-process',
       '--no-sandbox',
       '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage', // Recommended for serverless
-      '--single-process' // Better for serverless environments
-    ]
+      '--disable-dev-shm-usage',
+      '--single-process'
+    ],
+    executablePath: await chromium.executablePath(),
+    defaultViewport: {
+      width: templateData.canvasWidth ?? 1080,
+      height: templateData.canvasHeight ?? 1080,
+      deviceScaleFactor: 2
+    }
   });
   
   try {
@@ -24,13 +36,6 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     
     // Enable JavaScript
     await page.setJavaScriptEnabled(true);
-    
-    // Set viewport size
-    await page.setViewport({
-      width: templateData.canvasWidth ?? 1080,
-      height: templateData.canvasHeight ?? 1080,
-      deviceScaleFactor: 2 // For higher quality
-    });
     
     // Create a simple HTML page with a canvas
     const html = `
