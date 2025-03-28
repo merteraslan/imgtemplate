@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/generate-image/**": {
+    "app/api/generate-image/route.ts": {
       "memory": 3008,
       "maxDuration": 60
     }
