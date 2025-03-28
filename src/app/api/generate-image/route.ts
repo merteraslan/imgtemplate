@@ -14,6 +14,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
   const browser = await puppeteer.launch({
     headless: true,
     args: [
+      ...chromium.args,
       '--disable-web-security',
       '--allow-file-access-from-files',
       '--allow-file-access',
