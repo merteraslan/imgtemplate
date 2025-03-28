@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TemplateData } from '@/types/templateTypes';
-import puppeteer from 'puppeteer';
 
 // Function that draws the image directly in Node.js using canvas
 async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> {
-  let browser;
+  let browser = null;
   try {
-    console.log('Attempting to launch browser with puppeteer...');
-    // Initialize browser for headless rendering
-    browser = await puppeteer.launch({ 
+    console.log('Attempting to launch browser...');
+    
+    // Different imports for prod vs dev
+    const isProd = process.env.NODE_ENV === 'production';
+    
+    // Common browser launch options
+    const launchOptions = {
       headless: true,
       args: [
-        '--disable-web-security',  // Disable CORS for testing
+        '--disable-web-security',
         '--allow-file-access-from-files',
         '--allow-file-access',
         '--disable-features=IsolateOrigins,site-per-process',
@@ -19,7 +22,35 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
         '--no-sandbox',
         '--disable-setuid-sandbox'
       ]
-    });
+    };
+    
+    // Launch the browser differently depending on environment
+    if (isProd) {
+      console.log('Using chrome-aws-lambda for production');
+      // Dynamic imports to avoid issues in build/dev
+      const chromium = await import('chrome-aws-lambda');
+      const puppeteerCore = await import('puppeteer-core');
+      
+      // Add chrome-aws-lambda specific options
+      const updatedOptions = {
+        ...launchOptions,
+        args: [...launchOptions.args, ...(chromium.default.args || [])],
+        executablePath: await chromium.default.executablePath,
+        defaultViewport: chromium.default.defaultViewport
+      };
+      
+      console.log('Chrome executable path:', updatedOptions.executablePath);
+      browser = await puppeteerCore.default.launch(updatedOptions);
+    } 
+    else {
+      console.log('Using regular puppeteer for development');
+      const puppeteer = await import('puppeteer');
+      browser = await puppeteer.default.launch(launchOptions);
+    }
+    
+    if (!browser) {
+      throw new Error('Failed to launch browser');
+    }
     
     console.log('Browser launched successfully');
     const page = await browser.newPage();

@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  transpilePackages: ['chrome-aws-lambda'],
+  experimental: {
+    serverComponentsExternalPackages: ['chrome-aws-lambda', 'puppeteer-core']
+  }
 };
 
 export default nextConfig;
