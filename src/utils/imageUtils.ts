@@ -852,11 +852,23 @@ const drawImageToCanvas = (
   width: number,
   height: number
 ): Promise<void> => {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     if (!src || src === 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==') {
       // Skip empty or transparent placeholder
       resolve();
       return;
+    }
+    
+    // Convert HTTP URLs to data URLs during the export process to avoid canvas tainting
+    let imageSrc = src;
+    if (src.startsWith('http')) {
+      try {
+        console.log('Converting image URL to data URL for export:', src);
+        imageSrc = await fetchExternalImageAsDataURL(src);
+      } catch (error) {
+        console.error('Failed to convert image URL to data URL:', error);
+        // Continue with the original URL and hope for the best
+      }
     }
     
     const img = new Image();
@@ -876,10 +888,10 @@ const drawImageToCanvas = (
     };
     
     // Add cache buster to URL if not a data URL
-    if (src.startsWith('data:')) {
-      img.src = src;
+    if (imageSrc.startsWith('data:')) {
+      img.src = imageSrc;
     } else {
-      img.src = `${src}${src.includes('?') ? '&' : '?'}cb=${Date.now()}`;
+      img.src = `${imageSrc}${imageSrc.includes('?') ? '&' : '?'}cb=${Date.now()}`;
     }
   });
 };

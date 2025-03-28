@@ -22,7 +22,12 @@ import {
   BoundingBox,
   ImageLayer
 } from '../types/templateTypes';
-import { resizeImage, fetchExternalImageAsDataURL, exportSvgToPng } from '../utils/imageUtils';
+import {
+  resizeImage,
+  // fetchExternalImageAsDataURL is now only used in the export process
+  // fetchExternalImageAsDataURL,
+  exportSvgToPng
+} from '../utils/imageUtils';
 import { canvasPresets, getUniqueLayerName } from '../utils/canvasUtils';
 // Import our dedicated TextLayer component for rendering text layers
 // import TextLayer from './TextLayer';
@@ -908,46 +913,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const handleClearBackgroundImage = () => {
     setBackgroundImage(null);
   };
-
-  // Add new effect to convert external image URLs to data URLs
-  useEffect(() => {
-    const convertImageUrlsToDataUrls = async () => {
-      // Check if we have a background image that needs converting
-      if (backgroundImage && backgroundImage.startsWith('http')) {
-        try {
-          console.log('Converting background image to data URL');
-          const dataUrl = await fetchExternalImageAsDataURL(backgroundImage);
-          setBackgroundImage(dataUrl);
-        } catch (error) {
-          console.error('Failed to convert background image', error);
-        }
-      }
-
-      // Check image layers
-      const layersWithExternalImages = layers.filter(
-        layer => layer.type === 'image' && (layer as ImageLayer).src && (layer as ImageLayer).src.startsWith('http')
-      );
-
-      if (layersWithExternalImages.length > 0) {
-        for (const layer of layersWithExternalImages) {
-          try {
-            console.log(`Converting image for layer ${layer.id} to data URL`);
-            const dataUrl = await fetchExternalImageAsDataURL((layer as ImageLayer).src as string);
-            setLayers(prev =>
-              prev.map(l => l.id === layer.id ? { ...l, src: dataUrl } : l)
-            );
-          } catch (error) {
-            console.error(`Failed to convert image for layer ${layer.id}`, error);
-          }
-        }
-      }
-    };
-
-    // Only run this effect when not in renderOnly mode (i.e., in edit mode)
-    if (!renderOnly) {
-      convertImageUrlsToDataUrls();
-    }
-  }, [backgroundImage, layers, renderOnly]);
 
   // Add the handler for effect change
   const handleEffectChange = useCallback(
