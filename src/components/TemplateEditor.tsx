@@ -397,6 +397,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     };
 
     processImageUrls();
+
+    // Dependency: run when the layers array *identity* changes.
+    // Avoid depending on mutable refs like processingUrlsRef.current here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layers]);
 
   const handleDragStart = useCallback(
@@ -815,7 +819,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       console.error('Error exporting PNG:', error);
       alert('Failed to export PNG. Please ensure all images are properly loaded.');
     }
-  }, [canvasWidth, canvasHeight, layers]);
+  }, [canvasWidth, canvasHeight, layers, backgroundImage]);
 
   // API-based image generation handler
   const handleExportPNGViaAPI = useCallback(async (): Promise<void> => {
@@ -1047,9 +1051,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       setCanvasWidthInput(String(canvasWidth));
       setCanvasHeightInput(String(canvasHeight));
     }
-    // This effect should only run once on mount, so we're intentionally omitting dependencies
+    // This effect should run only once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // <--- Correct empty dependency array
 
   const handleSelectLayer = (id: string) => {
     setActiveLayerId(id);

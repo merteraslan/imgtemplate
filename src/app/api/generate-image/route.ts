@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TemplateData } from '@/types/templateTypes';
 import * as playwright from 'playwright';
-import { validateToken } from '@/utils/authUtils';
 
 // Function that draws the image directly in Node.js using canvas
 async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> {
@@ -675,42 +674,13 @@ export async function POST(req: NextRequest) {
       headers: {
         'Access-Control-Allow-Origin': allowOrigin,
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Session-Token',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Access-Control-Max-Age': '86400' // 24 hours
       }
     });
   }
   
   try {
-    // Authentication - Check either API key or session token
-    const apiKey = req.headers.get('Authorization')?.replace('Bearer ', '') || 
-                  req.headers.get('X-API-Key') || 
-                  req.nextUrl.searchParams.get('apiKey');
-    
-    const sessionToken = req.headers.get('X-Session-Token') ||
-                        req.nextUrl.searchParams.get('token');
-                  
-    const validApiKey = process.env.API_KEY;
-    
-    if (!validApiKey) {
-      console.error('API_KEY is not set in environment variables');
-      return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
-      );
-    }
-    
-    // Check if either API key or session token is valid
-    const isValidApiKey = apiKey && apiKey === validApiKey;
-    const isValidToken = sessionToken && validateToken(sessionToken);
-    
-    if (!isValidApiKey && !isValidToken) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Invalid or missing authentication' },
-        { status: 401 }
-      );
-    }
-    
     // Extract query parameters
     const { searchParams } = new URL(req.url);
     const debug = searchParams.get('debug') === 'true';
