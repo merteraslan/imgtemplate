@@ -11,5 +11,15 @@
       "src": "/api/generate-image",
       "dest": "/api/generate.js"
     }
+  ],
+  "builds": [
+    { 
+      "src": "api/generate.js", 
+      "use": "@vercel/node" 
+    },
+    {
+      "src": "package.json",
+      "use": "@vercel/next"
+    }
   ]
 } 

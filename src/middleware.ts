@@ -6,6 +6,11 @@ export const config = {
 };
 
 export function middleware(request: NextRequest) {
+  // Skip middleware for the standalone API function which has its own validation
+  if (request.nextUrl.pathname === '/api/generate-image') {
+    return NextResponse.next();
+  }
+  
   // Get the API key from environment variable
   const apiKey = process.env.API_KEY;
 
