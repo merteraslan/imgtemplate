@@ -68,6 +68,7 @@ const CanvasPreview: React.FC<CanvasPreviewProps> = ({
           height={canvasHeight}
           preserveAspectRatio="xMidYMid slice"
           crossOrigin="anonymous"
+          data-background="true"
         />
       )}
 

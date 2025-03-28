@@ -92,7 +92,7 @@ export const fetchExternalImageAsDataURL = async (
       console.warn('CORS fetch failed, trying Image approach:', fetchError);
       
       // Fallback to Image approach if fetch fails
-      return new Promise((resolve, reject) => {
+      return new Promise<string>((resolve, reject) => {
         const img = new Image();
         img.crossOrigin = 'anonymous';
         
@@ -155,7 +155,12 @@ export const fetchExternalImageAsDataURL = async (
         
         // Try adding a cache-busting parameter to bypass caching issues
         const cacheBuster = `?cb=${Date.now()}`;
-        img.src = imageUrl + cacheBuster;
+        // Ensure we don't add '?' if it already exists
+        if (imageUrl.includes('?')) {
+          img.src = imageUrl + '&' + cacheBuster.substring(1);
+        } else {
+          img.src = imageUrl + cacheBuster;
+        }
       });
     }
   } catch (error) {
@@ -227,13 +232,20 @@ export const exportSvgToPng = async (
       // Directly render from the layer data (JSON)
       console.log('Using direct layer data for rendering:', layersData.length, 'layers');
       
-      // Draw background color first
-      const bgLayer = layersData.find(l => l.id === 'background_layer' && l.type === 'image');
-      if (bgLayer && asImageLayer(bgLayer).useColorFill) {
-        ctx.fillStyle = asImageLayer(bgLayer).fillColor;
-        ctx.fillRect(0, 0, width, height);
+      // Find the background image from the SVG element
+      const backgroundImage = svgElement.querySelector('image[data-background="true"]');
+      if (backgroundImage && backgroundImage.getAttribute('href') && 
+          !backgroundImage.getAttribute('href')?.includes('[Background Image]')) {
+        // Skip if it's a placeholder
+        try {
+          await drawImageToCanvas(ctx, backgroundImage.getAttribute('href') || '', 0, 0, width, height);
+        } catch (error) {
+          console.warn('Failed to draw background image, using solid color instead', error);
+          ctx.fillStyle = '#f0f0f0';
+          ctx.fillRect(0, 0, width, height);
+        }
       }
-      
+
       // Draw all image layers (bottom to top)
       const imageLayers = layersData.filter(l => l.type === 'image' && l.visible && l.id !== 'background_layer');
       for (const layer of imageLayers.reverse()) {
@@ -521,8 +533,6 @@ export const exportSvgToPng = async (
                 ctx.strokeRect(layer.x, layer.y, layer.width, layer.height);
               }
               
-              // Reset global alpha
-              ctx.globalAlpha = 1;
             }
             
           } catch (error) {
@@ -610,7 +620,7 @@ export const exportSvgToPng = async (
     // If no direct layer data is provided, use the SVG DOM approach as before
     // The rest of the existing SVG-based implementation
     // Draw the background if it exists
-    const backgroundImage = svgElement.querySelector('image:first-child');
+    const backgroundImage = svgElement.querySelector('image[data-background="true"]');
     if (backgroundImage && backgroundImage.getAttribute('href') && 
         !backgroundImage.getAttribute('href')?.includes('[Background Image]')) {
       // Skip if it's a placeholder
@@ -846,6 +856,7 @@ export const exportSvgToPng = async (
 // Helper function to draw an image to a canvas
 const drawImageToCanvas = (
   ctx: CanvasRenderingContext2D,
+  // src can be http URL or data URL
   src: string,
   x: number,
   y: number,
@@ -859,15 +870,17 @@ const drawImageToCanvas = (
       return;
     }
     
-    // Convert HTTP URLs to data URLs during the export process to avoid canvas tainting
+    // Ensure we have a usable source (preferably data URL)
+    // If it's already a data URL, use it directly.
+    // If it's an HTTP URL, attempt conversion *again* during export just in case.
     let imageSrc = src;
     if (src.startsWith('http')) {
       try {
-        console.log('Converting image URL to data URL for export:', src);
+        // console.log('Attempting conversion for export:', src); // Verbose logging
         imageSrc = await fetchExternalImageAsDataURL(src);
       } catch (error) {
-        console.error('Failed to convert image URL to data URL:', error);
-        // Continue with the original URL and hope for the best
+        console.error('Export: Failed to convert image URL to data URL, using original:', error);
+        // Continue with the original URL and hope for the best (might taint canvas)
       }
     }
     
@@ -878,20 +891,25 @@ const drawImageToCanvas = (
       try {
         ctx.drawImage(img, x, y, width, height);
         resolve();
-      } catch (error) {
-        reject(error);
+      } catch (drawError) {
+        // This can happen if the canvas is tainted (e.g., CORS issue despite conversion attempt)
+        console.error(`Canvas drawing error for image ${src}:`, drawError);
+        reject(drawError);
       }
     };
     
     img.onerror = (e) => {
-      reject(new Error(`Failed to load image: ${e}`));
+      console.error(`Failed to load image into Image object: ${src}`, e);
+      reject(new Error(`Failed to load image: ${src}`));
     };
     
     // Add cache buster to URL if not a data URL
     if (imageSrc.startsWith('data:')) {
       img.src = imageSrc;
     } else {
-      img.src = `${imageSrc}${imageSrc.includes('?') ? '&' : '?'}cb=${Date.now()}`;
+       // Add cache buster only to non-data URLs
+       const cacheBuster = `?cb=${Date.now()}`;
+       img.src = `${imageSrc}${imageSrc.includes('?') ? '&' : cacheBuster.substring(1)}`;
     }
   });
-};
+}

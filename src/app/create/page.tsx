@@ -107,6 +107,7 @@ export default function CreatePage() {
       let dataChanged = false;
       const updatedData = { ...jsonData };
 
+      // Convert background image if it's external
       if (updatedData.backgroundImage && updatedData.backgroundImage.startsWith('http')) {
         try {
           console.log('Converting background image to data URL');
@@ -117,6 +118,7 @@ export default function CreatePage() {
         }
       }
 
+      // Convert image layer sources if they are external
       if (updatedData.layers && updatedData.layers.length > 0) {
         for (let i = 0; i < updatedData.layers.length; i++) {
           const layer = updatedData.layers[i];
@@ -137,6 +139,7 @@ export default function CreatePage() {
       }
 
       if (dataChanged) {
+        // Update the state only if URLs were actually converted
         console.log('Updated jsonData with data URLs');
         setJsonData(updatedData);
       }
@@ -144,6 +147,8 @@ export default function CreatePage() {
 
     convertExternalImagesToDataUrls();
   }, [jsonData]);
+  // Note: This useEffect only runs once when jsonData is initially set.
+  // It prepares the loaded data for reliable display and export.
 
   const handleDownloadImage = async () => {
     if (!editorRef.current || !jsonData) {
@@ -165,8 +170,8 @@ export default function CreatePage() {
         y: 0,
         scale: 2,
         useCORS: true,
-        allowTaint: false,
-        foreignObjectRendering: false,
+        allowTaint: true,
+        foreignObjectRendering: true,
         imageTimeout: 15000,
         backgroundColor: '#ffffff',
         onclone: (clonedDoc) => {

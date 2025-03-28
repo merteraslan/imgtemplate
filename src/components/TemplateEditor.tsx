@@ -13,7 +13,7 @@ import React, {
 // Importing Card from a UI library – ensure your tsconfig paths are set up correctly
 import { Card } from '@/components/ui/card';
 // Import only the icons that are actually used in this file
-import { Image as ImageIcon, Type, Download, FileImage } from 'lucide-react';
+import { Image as ImageIcon, Type, Download, FileImage, CloudLightning } from 'lucide-react';
 
 import styles from './TemplateEditor.module.css';
 import {
@@ -24,10 +24,10 @@ import {
 } from '../types/templateTypes';
 import {
   resizeImage,
-  // fetchExternalImageAsDataURL is now only used in the export process
-  // fetchExternalImageAsDataURL,
+  fetchExternalImageAsDataURL, // Import for direct use in editor
   exportSvgToPng
 } from '../utils/imageUtils';
+import { downloadImageFromAPI } from '../utils/apiUtils'; // Import API utility
 import { canvasPresets, getUniqueLayerName } from '../utils/canvasUtils';
 // Import our dedicated TextLayer component for rendering text layers
 // import TextLayer from './TextLayer';
@@ -277,6 +277,131 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const handleContainerDragLeave = useCallback((): void => {
     setDragOverIndex(null);
   }, []);
+
+  // --- Image URL Processing ---
+
+  // Ref to track URLs currently being processed to prevent race conditions/duplicates
+  const processingUrlsRef = useRef<Set<string>>(new Set());
+
+  // Effect to automatically fetch and convert http(s) URLs in image layers to data URLs
+  useEffect(() => {
+    const processImageUrls = async () => {
+      // Find layers that have an http(s) src, are not already loading/errored, and not currently being processed
+      const layersToProcess = layers.filter(layer =>
+        layer.type === 'image' &&
+        (layer as ImageLayer).src &&
+        (layer as ImageLayer).src.startsWith('http') &&
+        !(layer as ImageLayer)._isLoading &&
+        !(layer as ImageLayer)._error &&
+        !processingUrlsRef.current.has(layer.id)
+      );
+
+      if (layersToProcess.length === 0) {
+        return; // Nothing to process
+      }
+
+      // Mark layers as 'processing' in the ref and set loading state
+      layersToProcess.forEach(layer => processingUrlsRef.current.add(layer.id));
+
+      setLayers(prevLayers => {
+        return prevLayers.map(l => {
+          if (layersToProcess.some(p => p.id === l.id) && l.type === 'image') {
+            return {
+              ...l,
+              _isLoading: true,
+              _error: undefined // use undefined instead of null
+            } as ImageLayer;
+          }
+          return l;
+        });
+      });
+
+      // Process each URL
+      const results = await Promise.allSettled(layersToProcess.map(async (layer) => {
+        if (layer.type === 'image' && (layer as ImageLayer).src) { // Type guard
+          try {
+            const dataUrl = await fetchExternalImageAsDataURL((layer as ImageLayer).src);
+            return { id: layer.id, success: true, src: dataUrl };
+          } catch (error) {
+            console.error(`Failed to convert URL for layer ${layer.id}:`, error);
+            return {
+              id: layer.id,
+              success: false,
+              error: `Failed to load image. ${error instanceof Error ? error.message : String(error)}`,
+              originalSrc: (layer as ImageLayer).src
+            };
+          }
+        }
+        throw new Error("Invalid layer type for processing"); // Should not happen
+      }));
+
+      // Update state based on processing results
+      setLayers(prevLayers => {
+        const newLayers = [...prevLayers]; // Create mutable copy
+        let stateChanged = false;
+
+        results.forEach(result => {
+          if (result.status === 'fulfilled') {
+            const { id, success, src, error, originalSrc } = result.value;
+            const layerIndex = newLayers.findIndex(l => l.id === id);
+
+            if (layerIndex !== -1 && newLayers[layerIndex].type === 'image') {
+              processingUrlsRef.current.delete(id); // Mark as done
+              const currentLayer = newLayers[layerIndex] as ImageLayer;
+
+              // Only update if the src hasn't changed since processing started
+              if (currentLayer.src === originalSrc || success) {
+                newLayers[layerIndex] = {
+                  ...currentLayer,
+                  src: success ? src : (originalSrc || ''), // Use dataURL on success, keep original on error
+                  _isLoading: false,
+                  _error: success ? undefined : error, // use undefined instead of null
+                } as ImageLayer;
+                stateChanged = true;
+              } else {
+                // Src changed during processing, just remove loading flag
+                newLayers[layerIndex] = {
+                  ...currentLayer,
+                  _isLoading: false
+                } as ImageLayer;
+                stateChanged = true;
+              }
+            }
+          } else { // Handle rejected promises (less likely with allSettled)
+            // Log the error, potentially find layer ID if possible in `reason`
+            console.error("Image processing promise rejected:", result.reason);
+            // Attempt to find layer and mark error? This part is tricky.
+            // For now, rely on fulfilled status with success: false
+          }
+        });
+
+        // Final check: Clear flags for non-http layers if they got stuck
+        newLayers.forEach((l, index) => {
+          if (l.type === 'image' && !(l as ImageLayer).src?.startsWith('http')) {
+            const imageLayer = l as ImageLayer;
+            if (imageLayer._isLoading || imageLayer._error) {
+              if (!processingUrlsRef.current.has(l.id)) { // Only clear if not currently processing
+                newLayers[index] = {
+                  ...l,
+                  _isLoading: false,
+                  _error: undefined
+                } as ImageLayer;
+                stateChanged = true;
+              }
+            }
+          }
+        });
+
+        return stateChanged ? newLayers : prevLayers; // Return new array only if changed
+      });
+    };
+
+    processImageUrls();
+
+    // Dependency: run when the layers array *identity* changes.
+    // Avoid depending on mutable refs like processingUrlsRef.current here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layers]);
 
   const handleDragStart = useCallback(
     (e: MouseEvent<Element>, layer: Layer): void => {
@@ -624,13 +749,36 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     canvasHeight,
     backgroundImage: backgroundImage ? backgroundImage : null,
     layers: layers.map((layer: Layer) => {
+      // First check the layer type
       if (layer.type === 'image') {
-        // Only keep actual image data URLs or empty strings
-        return {
-          ...layer,
-          src: layer.src && !layer.src.startsWith('[Image:') ? layer.src : ''
+        // Handle image layers - remove transient UI state fields
+        const imageLayer = layer as ImageLayer;
+
+        // Create a clean copy of the layer without the transient properties
+        const cleanedLayer: ImageLayer = {
+          id: imageLayer.id,
+          name: imageLayer.name,
+          type: 'image',
+          x: imageLayer.x,
+          y: imageLayer.y,
+          width: imageLayer.width,
+          height: imageLayer.height,
+          visible: imageLayer.visible,
+          borderWidth: imageLayer.borderWidth,
+          borderColor: imageLayer.borderColor,
+          lockAspectRatio: imageLayer.lockAspectRatio,
+          opacity: imageLayer.opacity,
+          src: imageLayer.src && !imageLayer.src.startsWith('[Image:') ? imageLayer.src : '',
+          useColorFill: imageLayer.useColorFill,
+          fillColor: imageLayer.fillColor,
+          effect: imageLayer.effect,
+          cornerRadius: imageLayer.cornerRadius
         };
+
+        return cleanedLayer;
       }
+
+      // For other layer types, return as is - they don't have the transient state
       return layer;
     })
   }), [canvasWidth, canvasHeight, layers, backgroundImage]);
@@ -671,7 +819,21 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       console.error('Error exporting PNG:', error);
       alert('Failed to export PNG. Please ensure all images are properly loaded.');
     }
-  }, [canvasWidth, canvasHeight, layers]);
+  }, [canvasWidth, canvasHeight, layers, backgroundImage]);
+
+  // API-based image generation handler
+  const handleExportPNGViaAPI = useCallback(async (): Promise<void> => {
+    try {
+      // Get template data from current state
+      const templateData = exportPlaceholderData();
+
+      // Use the API utility to download the image
+      await downloadImageFromAPI(templateData, 'template-api.png');
+    } catch (error) {
+      console.error('Error generating image via API:', error);
+      alert('Failed to generate image via API. Please try again.');
+    }
+  }, [exportPlaceholderData]);
 
   // --- Canvas Size Input Handlers ---
   const handleCanvasWidthChange = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -1140,6 +1302,14 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                   <FileImage size={20} />
                   PNG
                 </button>
+                <button
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded"
+                  onClick={handleExportPNGViaAPI}
+                  title="Export PNG via API"
+                >
+                  <CloudLightning size={20} />
+                  API PNG
+                </button>
               </div>
               <input
                 type="file"
@@ -1348,13 +1518,54 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                   setLayerYInput(String(selectedLayer.y));
                 }
               }}
-              onImageUrlChange={(value: string) =>
-                setLayers((prev) =>
-                  prev.map((l) =>
-                    l.id === selectedLayer.id && l.type === 'image' ? { ...l, src: value } : l
-                  )
-                )
-              }
+              onImageUrlChange={async (value: string) => {
+                if (!selectedLayer || selectedLayer.type !== 'image') return;
+                const layerId = selectedLayer.id;
+
+                // If the value is an HTTP(S) URL, fetch and convert it
+                if (value && value.startsWith('http')) {
+                  // Set loading state immediately
+                  setLayers((prev) =>
+                    prev.map((l) =>
+                      l.id === layerId && l.type === 'image'
+                        ? { ...l, src: value, _isLoading: true, _error: undefined }
+                        : l
+                    )
+                  );
+
+                  try {
+                    const dataUrl = await fetchExternalImageAsDataURL(value);
+                    // Update with data URL on success
+                    setLayers((prev) =>
+                      prev.map((l) =>
+                        l.id === layerId && l.type === 'image'
+                          ? { ...l, src: dataUrl, _isLoading: false, _error: undefined, useColorFill: false }
+                          : l
+                      )
+                    );
+                  } catch (error) {
+                    console.error(`Failed to convert URL for layer ${layerId}:`, error);
+                    const errorMessage = `Failed to load image. ${error instanceof Error ? error.message : String(error)}`;
+                    // Update with error state on failure, keep original URL for reference
+                    setLayers((prev) =>
+                      prev.map((l) =>
+                        l.id === layerId && l.type === 'image'
+                          ? { ...l, src: value, _isLoading: false, _error: errorMessage, useColorFill: !value }
+                          : l
+                      )
+                    );
+                  }
+                } else {
+                  // If it's not an HTTP URL (empty, data URL, etc.), update directly
+                  setLayers((prev) =>
+                    prev.map((l) =>
+                      l.id === layerId && l.type === 'image'
+                        ? { ...l, src: value, _isLoading: false, _error: undefined, useColorFill: !value }
+                        : l
+                    )
+                  );
+                }
+              }}
               onFileChange={async (e: ChangeEvent<HTMLInputElement>) => {
                 const file = e.target.files?.[0];
                 if (file) {
@@ -1362,7 +1573,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     const { dataUrl } = await resizeImage(file);
                     setLayers((prev) =>
                       prev.map((l) =>
-                        l.id === selectedLayer?.id ? { ...l, src: dataUrl } : l
+                        l.id === selectedLayer?.id ? { ...l, src: dataUrl, useColorFill: false } : l
                       )
                     );
                   } catch {

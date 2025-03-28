@@ -29,6 +29,25 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## API Authentication
+
+This project includes a protected API endpoint that requires authentication. To use the API:
+
+1. Copy `.env.example` to `.env.local` and set your secret API key:
+
+   ```
+   API_KEY=your-secret-api-key-here
+   NEXT_PUBLIC_API_KEY=your-secret-api-key-here
+   SITE_URL=your-site-url
+   ```
+
+2. When deploying, make sure to set these environment variables on your hosting platform.
+
+3. API requests must include the API key in one of these ways:
+   - `Authorization: Bearer your-api-key` header
+   - `X-API-Key: your-api-key` header
+   - `?apiKey=your-api-key` query parameter
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

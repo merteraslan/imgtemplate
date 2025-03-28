@@ -274,6 +274,8 @@ const LayerProperties: React.FC<LayerPropertiesProps> = ({
               className="mt-1 block w-full border-gray-300 rounded-md"
               placeholder="https://example.com/image.jpg"
             />
+            {imageLayer._isLoading && <p className="text-xs text-blue-500 mt-1">Loading image...</p>}
+            {imageLayer._error && <p className="text-xs text-red-500 mt-1">Error: {imageLayer._error}</p>}
           </div>
           <div className="mb-2">
             <label className="block text-sm font-medium">Image Source</label>

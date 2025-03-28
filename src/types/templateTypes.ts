@@ -36,6 +36,8 @@ export interface ImageLayer extends BaseLayer {
   fillColor: string;
   effect: 'none' | 'dots' | 'lines' | 'waves' | 'grid' | 'checkerboard' | null;
   cornerRadius: number;
+  _isLoading?: boolean; // Optional internal state for UI feedback
+  _error?: string | null; // Optional internal state for UI feedback
 }
 
 export interface ShapeLayer extends BaseLayer {
