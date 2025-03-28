@@ -1,8 +1,10 @@
 {
+  "includeFiles": [
+    "node_modules/.playwright/**"
+  ],
   "functions": {
     "src/app/api/generate-image/route.ts": {
-      "includeFiles": "node_modules/.playwright/**",
-      "maxDuration": 60 
+      "maxDuration": 60
     }
   }
 } 
