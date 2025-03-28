@@ -4,18 +4,19 @@ import * as playwright from 'playwright';
 
 // Function that draws the image directly in Node.js using canvas
 async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> {
-  // Initialize browser for headless rendering with CORS disabled for testing
-  const browser = await playwright.chromium.launch({ 
-    headless: true,
-    args: [
-      '--disable-web-security',  // Disable CORS for testing
-      '--allow-file-access-from-files',
-      '--allow-file-access',
-      '--disable-features=IsolateOrigins,site-per-process'
-    ]
-  });
-  
+  let browser;
   try {
+    // Initialize browser for headless rendering with CORS disabled for testing
+    browser = await playwright.chromium.launch({ 
+      headless: true,
+      args: [
+        '--disable-web-security',  // Disable CORS for testing
+        '--allow-file-access-from-files',
+        '--allow-file-access',
+        '--disable-features=IsolateOrigins,site-per-process'
+      ]
+    });
+    
     const context = await browser.newContext({
       bypassCSP: true, // Bypass Content-Security-Policy
       javaScriptEnabled: true
@@ -648,10 +649,12 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     throw error; // Re-throw to be handled by the calling function
   } finally {
     // Always close the browser, whether successful or not
-    try {
-      await browser.close();
-    } catch (closeError) {
-      console.error('Error closing browser:', closeError);
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (closeError) {
+        console.error('Error closing browser:', closeError);
+      }
     }
   }
 }
@@ -740,15 +743,23 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error('Error generating image:', error);
+    
+    // Check if this is a Playwright installation error
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes("Executable doesn't exist") || 
+        errorMessage.includes("Please run the following command to download new browsers")) {
+      return NextResponse.json(
+        { 
+          error: 'Server configuration error: Playwright browsers not installed',
+          details: errorMessage
+        },
+        { status: 500 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Failed to generate image' },
-      { 
-        status: 500,
-        headers: {
-          'Access-Control-Allow-Origin': allowOrigin,
-          'Access-Control-Allow-Methods': 'POST, OPTIONS'
-        }
-      }
+      { status: 500 }
     );
   }
 } 
