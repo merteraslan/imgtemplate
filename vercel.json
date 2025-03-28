@@ -4,6 +4,7 @@
   ],
   "functions": {
     "src/app/api/generate-image/route.ts": {
+      "includeFiles": ".playwright-cache/**",
       "maxDuration": 60
     }
   }
