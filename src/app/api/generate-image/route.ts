@@ -9,7 +9,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     console.log('Attempting to launch browser with puppeteer...');
     // Initialize browser for headless rendering
     browser = await puppeteer.launch({ 
-      headless: 'new',
+      headless: true,
       args: [
         '--disable-web-security',  // Disable CORS for testing
         '--allow-file-access-from-files',
@@ -628,6 +628,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
 
     // Wait for rendering to complete and get the result with timeout
     const imageDataUrl = await page.evaluate(() => {
+      // @ts-expect-error -- window.renderResult is defined in our injected script
       return window.renderResult;
     }, { timeout: 30000 });
     
