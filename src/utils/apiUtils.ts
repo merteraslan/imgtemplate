@@ -1,5 +1,3 @@
-"use client";
-
 import { TemplateData } from '@/types/templateTypes';
 
 /**
@@ -9,15 +7,11 @@ import { TemplateData } from '@/types/templateTypes';
  */
 export async function generateImageFromAPI(templateData: TemplateData): Promise<Blob> {
   try {
-    // Get the API key from environment variable or localStorage
-    const apiKey = process.env.NEXT_PUBLIC_API_KEY || localStorage.getItem('api_key');
-    
     // Call the image generation API endpoint
     const response = await fetch('/api/generate-image', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': apiKey ? `Bearer ${apiKey}` : '',
       },
       body: JSON.stringify(templateData),
     });
@@ -71,20 +65,4 @@ export async function downloadImageFromAPI(
     console.error('Error downloading image:', error);
     throw error;
   }
-}
-
-/**
- * Sets the API key in localStorage for client-side storage
- * @param key The API key to store
- */
-export function setApiKey(key: string): void {
-  localStorage.setItem('api_key', key);
-}
-
-/**
- * Gets the API key from localStorage
- * @returns The stored API key or null if not set
- */
-export function getApiKey(): string | null {
-  return localStorage.getItem('api_key');
 } 

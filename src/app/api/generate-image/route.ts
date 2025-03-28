@@ -1,59 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TemplateData } from '@/types/templateTypes';
+import * as playwright from 'playwright';
 
 // Function that draws the image directly in Node.js using canvas
 async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> {
-  let browser = null;
+  // Initialize browser for headless rendering with CORS disabled for testing
+  const browser = await playwright.chromium.launch({ 
+    headless: true,
+    args: [
+      '--disable-web-security',  // Disable CORS for testing
+      '--allow-file-access-from-files',
+      '--allow-file-access',
+      '--disable-features=IsolateOrigins,site-per-process'
+    ]
+  });
+  
   try {
-    console.log('Attempting to launch browser...');
+    const context = await browser.newContext({
+      bypassCSP: true, // Bypass Content-Security-Policy
+      javaScriptEnabled: true
+    });
     
-    // Different imports for prod vs dev
-    const isProd = process.env.NODE_ENV === 'production';
-    
-    // Common browser launch options
-    const launchOptions = {
-      headless: true,
-      args: [
-        '--disable-web-security',
-        '--allow-file-access-from-files',
-        '--allow-file-access',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--disable-dev-shm-usage',
-        '--no-sandbox',
-        '--disable-setuid-sandbox'
-      ]
-    };
-    
-    // Launch the browser differently depending on environment
-    if (isProd) {
-      console.log('Using chrome-aws-lambda for production');
-      // Dynamic imports to avoid issues in build/dev
-      const chromium = await import('chrome-aws-lambda');
-      const puppeteerCore = await import('puppeteer-core');
-      
-      // Add chrome-aws-lambda specific options
-      const updatedOptions = {
-        ...launchOptions,
-        args: [...launchOptions.args, ...(chromium.default.args || [])],
-        executablePath: await chromium.default.executablePath,
-        defaultViewport: chromium.default.defaultViewport
-      };
-      
-      console.log('Chrome executable path:', updatedOptions.executablePath);
-      browser = await puppeteerCore.default.launch(updatedOptions);
-    } 
-    else {
-      console.log('Using regular puppeteer for development');
-      const puppeteer = await import('puppeteer');
-      browser = await puppeteer.default.launch(launchOptions);
-    }
-    
-    if (!browser) {
-      throw new Error('Failed to launch browser');
-    }
-    
-    console.log('Browser launched successfully');
-    const page = await browser.newPage();
+    const page = await context.newPage();
     
     // Create a simple HTML page with a canvas
     const html = `
@@ -658,10 +626,8 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     await page.addScriptTag({ content: renderingScript });
 
     // Wait for rendering to complete and get the result with timeout
-    const imageDataUrl = await page.evaluate(() => {
-      // @ts-expect-error -- window.renderResult is defined in our injected script
-      return window.renderResult;
-    }, { timeout: 30000 });
+    // @ts-expect-error -- Playwright's evaluate() will handle the window property
+    const imageDataUrl = await page.evaluate(() => window.renderResult, { timeout: 30000 });
     
     if (!imageDataUrl || typeof imageDataUrl !== 'string') {
       throw new Error('Failed to generate image: Invalid data URL returned');
@@ -679,27 +645,13 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     return buffer;
   } catch (error) {
     console.error('Error in renderImageFromJSON:', error);
-    
-    // Try to provide detailed error information
-    let errorMessage = 'Unknown error';
-    if (error instanceof Error) {
-      errorMessage = `${error.name}: ${error.message}`;
-      if (error.stack) {
-        console.error('Stack trace:', error.stack);
-      }
-    } else {
-      errorMessage = String(error);
-    }
-    
-    throw new Error(`Failed to render image: ${errorMessage}`);
+    throw error; // Re-throw to be handled by the calling function
   } finally {
     // Always close the browser, whether successful or not
-    if (browser) {
-      try {
-        await browser.close();
-      } catch (closeError) {
-        console.error('Error closing browser:', closeError);
-      }
+    try {
+      await browser.close();
+    } catch (closeError) {
+      console.error('Error closing browser:', closeError);
     }
   }
 }
@@ -729,6 +681,34 @@ export async function POST(req: NextRequest) {
   }
   
   try {
+    // --- Authorization Check START ---
+    const authorizationHeader = req.headers.get('authorization');
+    const expectedToken = process.env.API_SECRET_TOKEN;
+
+    if (!expectedToken) {
+      // Log an error on the server if the token is not configured
+      console.error('API_SECRET_TOKEN environment variable is not set.');
+      // Return a generic 500 error to avoid leaking information
+      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    }
+
+    if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Missing or invalid Authorization header' },
+        { status: 401 }
+      );
+    }
+
+    const providedToken = authorizationHeader.substring(7); // Remove "Bearer " prefix
+
+    if (providedToken !== expectedToken) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Invalid token' },
+        { status: 401 }
+      );
+    }
+    // --- Authorization Check END ---
+
     // Extract query parameters
     const { searchParams } = new URL(req.url);
     const debug = searchParams.get('debug') === 'true';
@@ -788,23 +768,15 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error('Error generating image:', error);
-    
-    // Check if this is a Playwright installation error
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (errorMessage.includes("Executable doesn't exist") || 
-        errorMessage.includes("Please run the following command to download new browsers")) {
-      return NextResponse.json(
-        { 
-          error: 'Server configuration error: Playwright browsers not installed',
-          details: errorMessage
-        },
-        { status: 500 }
-      );
-    }
-    
     return NextResponse.json(
       { error: 'Failed to generate image' },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': allowOrigin,
+          'Access-Control-Allow-Methods': 'POST, OPTIONS'
+        }
+      }
     );
   }
 } 
