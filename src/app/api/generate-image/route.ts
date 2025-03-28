@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TemplateData } from '@/types/templateTypes';
-import * as playwright from 'playwright';
-
-// Set the browser download path to a writable location
-process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '0';
+import puppeteer from 'puppeteer';
 
 // Function that draws the image directly in Node.js using canvas
 async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> {
   let browser;
   try {
-    console.log('Attempting to launch browser...');
-    // Initialize browser for headless rendering with more resilient options
-    browser = await playwright.chromium.launch({ 
-      headless: true,
-      // Try connecting to Chrome in different ways
-      executablePath: process.env.CHROME_PATH || undefined,
+    console.log('Attempting to launch browser with puppeteer...');
+    // Initialize browser for headless rendering
+    browser = await puppeteer.launch({ 
+      headless: 'new',
       args: [
         '--disable-web-security',  // Disable CORS for testing
         '--allow-file-access-from-files',
@@ -27,12 +22,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     });
     
     console.log('Browser launched successfully');
-    const context = await browser.newContext({
-      bypassCSP: true, // Bypass Content-Security-Policy
-      javaScriptEnabled: true
-    });
-    
-    const page = await context.newPage();
+    const page = await browser.newPage();
     
     // Create a simple HTML page with a canvas
     const html = `
@@ -637,8 +627,9 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     await page.addScriptTag({ content: renderingScript });
 
     // Wait for rendering to complete and get the result with timeout
-    // @ts-expect-error -- Playwright's evaluate() will handle the window property
-    const imageDataUrl = await page.evaluate(() => window.renderResult, { timeout: 30000 });
+    const imageDataUrl = await page.evaluate(() => {
+      return window.renderResult;
+    }, { timeout: 30000 });
     
     if (!imageDataUrl || typeof imageDataUrl !== 'string') {
       throw new Error('Failed to generate image: Invalid data URL returned');
