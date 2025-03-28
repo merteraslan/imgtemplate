@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "playwright install chromium && next build",
+    "build": "PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium --with-deps && next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postinstall": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium --with-deps"
   },
   "dependencies": {
     "@radix-ui/react-select": "^2.1.6",

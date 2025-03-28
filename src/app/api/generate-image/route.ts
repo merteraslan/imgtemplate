@@ -2,21 +2,31 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TemplateData } from '@/types/templateTypes';
 import * as playwright from 'playwright';
 
+// Set the browser download path to a writable location
+process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '0';
+
 // Function that draws the image directly in Node.js using canvas
 async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> {
   let browser;
   try {
-    // Initialize browser for headless rendering with CORS disabled for testing
+    console.log('Attempting to launch browser...');
+    // Initialize browser for headless rendering with more resilient options
     browser = await playwright.chromium.launch({ 
       headless: true,
+      // Try connecting to Chrome in different ways
+      executablePath: process.env.CHROME_PATH || undefined,
       args: [
         '--disable-web-security',  // Disable CORS for testing
         '--allow-file-access-from-files',
         '--allow-file-access',
-        '--disable-features=IsolateOrigins,site-per-process'
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-dev-shm-usage',
+        '--no-sandbox',
+        '--disable-setuid-sandbox'
       ]
     });
     
+    console.log('Browser launched successfully');
     const context = await browser.newContext({
       bypassCSP: true, // Bypass Content-Security-Policy
       javaScriptEnabled: true
@@ -646,7 +656,19 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     return buffer;
   } catch (error) {
     console.error('Error in renderImageFromJSON:', error);
-    throw error; // Re-throw to be handled by the calling function
+    
+    // Try to provide detailed error information
+    let errorMessage = 'Unknown error';
+    if (error instanceof Error) {
+      errorMessage = `${error.name}: ${error.message}`;
+      if (error.stack) {
+        console.error('Stack trace:', error.stack);
+      }
+    } else {
+      errorMessage = String(error);
+    }
+    
+    throw new Error(`Failed to render image: ${errorMessage}`);
   } finally {
     // Always close the browser, whether successful or not
     if (browser) {
