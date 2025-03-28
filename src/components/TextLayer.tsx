@@ -8,9 +8,10 @@ interface TextLayerProps {
   layer: TextLayerType;
   onDragStart: (e: React.MouseEvent, layer: TextLayerType) => void;
   updateBBox: (id: string, bbox: BoundingBox) => void;
+  isEditable: boolean;
 }
 
-const TextLayer: React.FC<TextLayerProps> = ({ layer, onDragStart, updateBBox }) => {
+const TextLayer: React.FC<TextLayerProps> = ({ layer, onDragStart, updateBBox, isEditable }) => {
   const textRef = useRef<SVGTextElement>(null);
 
   useLayoutEffect(() => {
@@ -29,16 +30,16 @@ const TextLayer: React.FC<TextLayerProps> = ({ layer, onDragStart, updateBBox })
       fontSize={layer.size}
       fill={layer.color}
       style={{
-        cursor: 'move',
+        cursor: isEditable ? 'move' : 'default',
         userSelect: 'none',
         fontStyle: layer.italic ? 'italic' : 'normal',
         fontWeight: layer.bold ? 'bold' : 'normal'
       }}
       opacity={layer.opacity ?? 1}
-      onMouseDown={(e) => {
+      onMouseDown={isEditable ? (e) => {
         e.preventDefault();
         onDragStart(e, layer);
-      }}
+      } : undefined}
     >
       {layer.text}
     </text>

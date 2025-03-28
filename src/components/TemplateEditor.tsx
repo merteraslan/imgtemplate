@@ -18,7 +18,6 @@ import { Image as ImageIcon, Type, Download, FileImage } from 'lucide-react';
 import styles from './TemplateEditor.module.css';
 import {
   Layer,
-  TextLayer as TextLayerType,
   ImageLayer,
   TemplateData,
   BoundingBox
@@ -26,7 +25,7 @@ import {
 import { resizeImage } from '../utils/imageUtils';
 import { canvasPresets, getUniqueLayerName } from '../utils/canvasUtils';
 // Import our dedicated TextLayer component for rendering text layers
-import TextLayer from './TextLayer';
+// import TextLayer from './TextLayer';
 import CanvasPreview from './CanvasPreview';
 import LayerList from './LayerList';
 import LayerProperties from './LayerProperties';
@@ -141,7 +140,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
         src: effectiveTemplateData.backgroundImage,
         lockAspectRatio: true
       };
-      
+
       const existingBgIndex = templateLayers.findIndex(l => l.id === 'background_layer');
       if (existingBgIndex >= 0) {
         templateLayers[existingBgIndex] = backgroundLayer;
@@ -328,10 +327,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
         prev.map((l) =>
           l.id === draggedLayer.id
             ? {
-                ...l,
-                x: Math.round(svgP.x - dragOffset.x),
-                y: Math.round(svgP.y - dragOffset.y)
-              }
+              ...l,
+              x: Math.round(svgP.x - dragOffset.x),
+              y: Math.round(svgP.y - dragOffset.y)
+            }
             : l
         )
       );
@@ -663,43 +662,73 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     img.src = url;
   }, [canvasWidth, canvasHeight]);
 
+  // --- Canvas Size Input Handlers ---
   const handleCanvasWidthChange = (e: ChangeEvent<HTMLInputElement>): void => {
-    setCanvasWidthInput(e.target.value);
-  };
-  const handleCanvasWidthBlur = (): void => {
-    const parsed = parseInt(canvasWidthInput, 10);
+    const value = e.target.value;
+    setCanvasWidthInput(value); // Keep input state always updated
+    const parsed = parseInt(value, 10);
+    // Update main state immediately if valid positive number
     if (!isNaN(parsed) && parsed > 0) {
       setCanvasWidth(parsed);
-      setCanvasWidthInput(String(parsed));
-    } else {
-      setCanvasWidthInput(String(canvasWidth));
+      // If preset was selected, clear it if user types custom dimensions
+      if (preset !== '') setPreset('');
     }
   };
-  const handleCanvasHeightChange = (e: ChangeEvent<HTMLInputElement>): void => {
-    setCanvasHeightInput(e.target.value);
+
+  const handleCanvasWidthBlur = (): void => {
+    const parsed = parseInt(canvasWidthInput, 10);
+    // On blur, ensure the input reflects the actual valid state
+    if (isNaN(parsed) || parsed <= 0) {
+      setCanvasWidthInput(String(canvasWidth)); // Reset to last valid width
+    } else {
+      setCanvasWidthInput(String(parsed)); // Ensure input matches parsed value if valid
+      setCanvasWidth(parsed); // Ensure state is set if changed just before blur
+    }
   };
-  const handleCanvasHeightBlur = (): void => {
-    const parsed = parseInt(canvasHeightInput, 10);
+
+  const handleCanvasHeightChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    const value = e.target.value;
+    setCanvasHeightInput(value); // Keep input state always updated
+    const parsed = parseInt(value, 10);
+    // Update main state immediately if valid positive number
     if (!isNaN(parsed) && parsed > 0) {
       setCanvasHeight(parsed);
-      setCanvasHeightInput(String(parsed));
-    } else {
-      setCanvasHeightInput(String(canvasHeight));
+      // If preset was selected, clear it if user types custom dimensions
+      if (preset !== '') setPreset('');
     }
   };
+
+  const handleCanvasHeightBlur = (): void => {
+    const parsed = parseInt(canvasHeightInput, 10);
+    // On blur, ensure the input reflects the actual valid state
+    if (isNaN(parsed) || parsed <= 0) {
+      setCanvasHeightInput(String(canvasHeight)); // Reset to last valid height
+    } else {
+      setCanvasHeightInput(String(parsed)); // Ensure input matches parsed value if valid
+      setCanvasHeight(parsed); // Ensure state is set if changed just before blur
+    }
+  };
+
   const handlePresetChange = (e: ChangeEvent<HTMLSelectElement>): void => {
     const value = e.target.value;
     setPreset(value);
-    if (value) {
+    if (value && value !== 'custom') { // Handle empty or 'custom' value explicitly if needed
       const [w, h] = value.split('x').map((v) => parseInt(v, 10));
       if (!isNaN(w) && !isNaN(h)) {
         setCanvasWidth(w);
         setCanvasHeight(h);
+        // *** IMPORTANT: Update input fields as well ***
         setCanvasWidthInput(String(w));
         setCanvasHeightInput(String(h));
       }
     }
   };
+
+  // Effect to update preset value when dimensions change externally or via input
+  useEffect(() => {
+    const matchingPreset = canvasPresets.find(p => p.value === `${canvasWidth}x${canvasHeight}`);
+    setPreset(matchingPreset ? matchingPreset.value : '');
+  }, [canvasWidth, canvasHeight]);
 
   useEffect(() => {
     const stateToSave = {
@@ -744,115 +773,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     );
   }, [selectedLayer]);
 
-  if (renderOnly) {
-    return (
-      <div style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}>
-        <svg
-          ref={svgRef}
-          width={canvasWidth}
-          height={canvasHeight}
-          viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
-          className={styles.svgCanvas}
-          style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
-        >
-          {backgroundImage ? (
-            <image
-              href={backgroundImage}
-              width={canvasWidth}
-              height={canvasHeight}
-              preserveAspectRatio="xMidYMid slice"
-            />
-          ) : (
-            <rect width={canvasWidth} height={canvasHeight} fill="#f0f0f0" />
-          )}
-          {layers
-            .slice()
-            .reverse()
-            .filter((l) => l.visible)
-            .map((layer) => {
-              if (layer.type === 'text') {
-                const textLayer = layer as TextLayerType;
-                return (
-                  <g key={layer.id}>
-                    {textLayer.useBackground && textBBoxes[layer.id] && (
-                      <rect
-                        x={textBBoxes[layer.id].x - textLayer.bgPadding}
-                        y={textBBoxes[layer.id].y - textLayer.bgPadding}
-                        width={textBBoxes[layer.id].width + 2 * textLayer.bgPadding}
-                        height={textBBoxes[layer.id].height + 2 * textLayer.bgPadding}
-                        fill={textLayer.backgroundColor}
-                        opacity={textLayer.opacity ?? 1}
-                      />
-                    )}
-                    <TextLayer
-                      layer={textLayer}
-                      onDragStart={handleDragStart}
-                      updateBBox={updateTextBBox}
-                    />
-                    {textLayer.borderWidth > 0 && textBBoxes[layer.id] && (
-                      <rect
-                        x={textBBoxes[layer.id].x}
-                        y={textBBoxes[layer.id].y}
-                        width={textBBoxes[layer.id].width}
-                        height={textBBoxes[layer.id].height}
-                        fill="none"
-                        stroke={textLayer.borderColor}
-                        strokeWidth={textLayer.borderWidth}
-                      />
-                    )}
-                  </g>
-                );
-              } else if (layer.type === 'image') {
-                const imageLayer = layer as ImageLayer;
-                return (
-                  <g key={layer.id}>
-                    {imageLayer.useColorFill ? (
-                      <rect
-                        x={imageLayer.x}
-                        y={imageLayer.y}
-                        width={imageLayer.width}
-                        height={imageLayer.height}
-                        fill={imageLayer.fillColor}
-                        opacity={imageLayer.opacity ?? 1}
-                      />
-                    ) : (
-                      imageLayer.src && (
-                        <image
-                          href={imageLayer.src}
-                          x={imageLayer.x}
-                          y={imageLayer.y}
-                          width={imageLayer.width}
-                          height={imageLayer.height}
-                          preserveAspectRatio={
-                            imageLayer.src && !imageLayer.src.startsWith('data:')
-                              ? 'none'
-                              : 'xMidYMid meet'
-                          }
-                          opacity={imageLayer.opacity ?? 1}
-                        />
-                      )
-                    )}
-                    {imageLayer.borderWidth > 0 && (
-                      <rect
-                        x={imageLayer.x}
-                        y={imageLayer.y}
-                        width={imageLayer.width}
-                        height={imageLayer.height}
-                        fill="none"
-                        stroke={imageLayer.borderColor}
-                        strokeWidth={imageLayer.borderWidth}
-                      />
-                    )}
-                  </g>
-                );
-              }
-              return null;
-            })}
-        </svg>
-      </div>
-    );
-  }
-
   return (
     <div className="flex gap-4 p-4 w-full">
       <div className="flex flex-col gap-4 w-80">
@@ -867,7 +787,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               className="mt-1 block w-full border-gray-300 rounded-md"
             >
               {canvasPresets.map((option) => (
-                <option key={option.value || 'custom'} value={option.value}>
+                <option key={option.value || 'custom-key'} value={option.value}> {/* Ensure unique key */}
                   {option.label}
                 </option>
               ))}
@@ -1019,7 +939,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 textBBoxes={textBBoxes}
                 zoom={zoom}
                 selectedLayerId={selectedLayerId}
-                onMouseMove={(e: MouseEvent<Element>) => {
+                isEditable={!renderOnly}
+                onMouseMove={(e: React.MouseEvent<Element>) => {
                   handleDrag(e);
                   handleResizeMove(e);
                 }}
@@ -1035,6 +956,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 handleResizeStart={handleResizeStart}
                 updateTextBBox={updateTextBBox}
                 svgRef={svgRef}
+                backgroundImage={backgroundImage}
               />
             </div>
           </div>
