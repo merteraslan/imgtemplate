@@ -1047,7 +1047,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       setCanvasWidthInput(String(canvasWidth));
       setCanvasHeightInput(String(canvasHeight));
     }
-    // This effect should run only once on mount
+    // This effect should only run once on mount, so we're intentionally omitting dependencies
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSelectLayer = (id: string) => {

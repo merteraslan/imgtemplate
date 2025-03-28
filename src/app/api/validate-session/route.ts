@@ -25,8 +25,8 @@ function cleanExpiredTokens() {
   }
 }
 
-// Token validation helper that can be imported by other API routes
-export function validateToken(token: string | null): boolean {
+// Token validation helper (not exported from route file)
+function validateToken(token: string | null): boolean {
   if (!token) return false;
   
   cleanExpiredTokens();
@@ -79,4 +79,7 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}
+
+// Export for internal usage
+export { SESSION_TOKENS, validateToken }; 

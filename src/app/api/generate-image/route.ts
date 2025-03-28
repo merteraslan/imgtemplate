@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TemplateData } from '@/types/templateTypes';
 import * as playwright from 'playwright';
-import { validateToken } from '../validate-session/route';
+import { validateToken } from '@/utils/authUtils';
 
 // Function that draws the image directly in Node.js using canvas
 async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> {
