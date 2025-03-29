@@ -136,8 +136,8 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     let embeddedFontStyles = '';
     for (const font of fontsToEmbed) {
         try {
-            // Construct path relative to project root (cwd) -> public/fonts
-            const fontPath = path.join(process.cwd(), 'public', 'fonts', font.fileName);
+            // Construct path relative to project root (cwd) -> src/assets/fonts/FONT_FAMILY/files/FONT_FILENAME
+            const fontPath = path.join(process.cwd(), 'src', 'assets', 'fonts', font.family.toLowerCase(), 'files', font.fileName);
             
             if (fs.existsSync(fontPath)) {
                 const fontBuffer = fs.readFileSync(fontPath);
