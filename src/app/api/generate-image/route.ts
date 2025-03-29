@@ -232,6 +232,8 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
       </html>`; // Same HTML structure as before
         await page.setContent(html, { waitUntil: 'networkidle0', timeout: 20000 }); // Adjusted timeout
         await page.evaluate(() => document.fonts.ready); // Wait for fonts
+        // Add an explicit delay for fonts using evaluate
+        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
 
         // Add font loading diagnostics
         await page.evaluate(() => {
