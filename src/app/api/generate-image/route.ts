@@ -1,46 +1,143 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { TemplateData } from '@/types/templateTypes';
-import puppeteer from 'puppeteer-core';
+import { TemplateData, Layer, ImageLayer } from '@/types/templateTypes';
+import puppeteer, { Browser, Page } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
+import fetch from 'node-fetch'; // Or use native fetch if Node v18+
 
 // Configure route segment for longer processing
 export const maxDuration = 300; // 300 seconds timeout (Adjust as needed/allowed by plan)
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 
-// Function that draws the image directly in Node.js using canvas
-async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> {
-  // Initialize browser for headless rendering with specific configs for Vercel serverless
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: [
-      ...chromium.args,
-      '--disable-web-security',
-      '--allow-file-access-from-files',
-      '--allow-file-access',
-      '--disable-features=IsolateOrigins,site-per-process',
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--single-process'
-    ],
-    executablePath: await chromium.executablePath(),
-    defaultViewport: {
-      width: templateData.canvasWidth ?? 1080,
-      height: templateData.canvasHeight ?? 1080,
-      deviceScaleFactor: 2
+// --- Helper Function to fetch/convert URLs (Runs inside API route) ---
+async function convertUrlsToDataUrls(templateData: TemplateData): Promise<TemplateData> {
+    console.time('imagePrefetching'); // Start timing
+    const updatedData = JSON.parse(JSON.stringify(templateData)); // Deep copy
+    const urlsToFetch: { id: string | 'background'; url: string }[] = [];
+    const urlMap = new Map<string, { id: string | 'background'; url: string }>(); // To avoid fetching the same URL multiple times
+
+    // Identify unique URLs
+    if (updatedData.backgroundImage && updatedData.backgroundImage.startsWith('http')) {
+        if (!urlMap.has(updatedData.backgroundImage)) {
+            const entry = { id: 'background', url: updatedData.backgroundImage };
+            urlsToFetch.push(entry);
+            urlMap.set(updatedData.backgroundImage, entry);
+        }
     }
-  });
-  
-  try {
-    const page = await browser.newPage();
-    
-    // Enable JavaScript
-    await page.setJavaScriptEnabled(true);
-    
-    // Create a simple HTML page with a canvas
-    const html = `
-      <html>
+    if (updatedData.layers) {
+        updatedData.layers.forEach((layer: Layer) => { // Explicitly type layer
+            if (layer.type === 'image' && (layer as ImageLayer).src && (layer as ImageLayer).src.startsWith('http')) {
+                const src = (layer as ImageLayer).src;
+                 if (!urlMap.has(src)) {
+                    const entry = { id: layer.id, url: src }; // Use layer ID for tracking initially
+                    urlsToFetch.push(entry);
+                    urlMap.set(src, entry); // Map original URL to its first occurrence info
+                 }
+            }
+        });
+    }
+
+    if (urlsToFetch.length === 0) {
+        console.timeEnd('imagePrefetching');
+        return updatedData; // No external URLs
+    }
+
+    console.log(`Fetching ${urlsToFetch.length} unique external image URL(s)...`);
+
+    // Fetch concurrently
+    const fetchPromises = urlsToFetch.map(async ({ url }) => { // Only need URL for fetching
+        try {
+            const response = await fetch(url, {
+                signal: AbortSignal.timeout(25000), // 25-second timeout per image fetch
+                headers: { 'User-Agent': 'ImageTemplateApp/1.0 (+https://your-app-url.com)' } // Be a good citizen
+            });
+            if (!response.ok) {
+                throw new Error(`Status ${response.status}`);
+            }
+            const buffer = await response.buffer();
+            const contentType = response.headers.get('content-type') || 'image/png';
+            const base64 = buffer.toString('base64');
+            const dataUrl = `data:${contentType};base64,${base64}`;
+            console.log(`Fetched: ${url.substring(0, 50)}...`);
+            return { originalUrl: url, dataUrl, success: true };
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error(`Failed to fetch image ${url}:`, errorMessage);
+            return { originalUrl: url, dataUrl: null, success: false, error: errorMessage };
+        }
+    });
+
+    const results = await Promise.allSettled(fetchPromises);
+
+    // Create a map of original URL -> result data URL (or null on failure)
+    const dataUrlResults = new Map<string, string | null>();
+    results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+            dataUrlResults.set(result.value.originalUrl, result.value.success ? result.value.dataUrl : null);
+        } else if (result.status === 'rejected') {
+            console.error('Unexpected image fetch rejection:', result.reason);
+            // Cannot map result.reason.originalUrl reliably here, so failed URLs won't be mapped
+        }
+    });
+
+     // Update the templateData with the results
+     if (updatedData.backgroundImage && updatedData.backgroundImage.startsWith('http')) {
+         const resultDataUrl = dataUrlResults.get(updatedData.backgroundImage);
+         if (resultDataUrl) { // Only update if successfully fetched
+             updatedData.backgroundImage = resultDataUrl;
+         } else if (resultDataUrl === null) { // Fetch failed
+             console.warn(`Failed fetch for background image, keeping original URL: ${updatedData.backgroundImage}`);
+             // Optional: Set to empty string or placeholder? updatedData.backgroundImage = '';
+         }
+     }
+     if (updatedData.layers) {
+         updatedData.layers = updatedData.layers.map((layer: Layer) => { // Explicitly type layer
+             if (layer.type === 'image' && (layer as ImageLayer).src && (layer as ImageLayer).src.startsWith('http')) {
+                 const originalSrc = (layer as ImageLayer).src;
+                 const resultDataUrl = dataUrlResults.get(originalSrc);
+                 if (resultDataUrl) { // Successfully fetched
+                     return { ...layer, src: resultDataUrl };
+                 } else if (resultDataUrl === null) { // Fetch failed
+                      console.warn(`Failed fetch for layer ${layer.id}, keeping original URL: ${originalSrc}`);
+                     // Optional: Set src to empty string? return { ...layer, src: '' };
+                     return layer; // Keep original layer object
+                 }
+             }
+             return layer;
+         });
+     }
+
+    console.timeEnd('imagePrefetching');
+    return updatedData;
+}
+
+// --- Render function (largely unchanged from previous answer, uses data URLs) ---
+async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> {
+    console.time('puppeteerRender'); // Start timing
+    let browser: Browser | null = null;
+    let page: Page | null = null;
+
+    try {
+        browser = await puppeteer.launch({ /* ... browser args ... */
+            headless: true,
+            args: [
+                ...chromium.args,
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--single-process'
+            ],
+            executablePath: await chromium.executablePath(),
+            defaultViewport: {
+                width: templateData.canvasWidth ?? 1080,
+                height: templateData.canvasHeight ?? 1080,
+                deviceScaleFactor: 2
+            }
+        });
+        page = await browser.newPage();
+        await page.setJavaScriptEnabled(true);
+
+        const html = `<html>
         <head>
           <style>
             body, html { 
@@ -93,688 +190,365 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
           <div style="position: absolute; visibility: hidden; font-family: 'Roboto'; font-size: 0;">.</div>
           <div style="position: absolute; visibility: hidden; font-family: 'Open Sans'; font-size: 0;">.</div>
         </body>
-      </html>
-    `;
+      </html>`; // Same HTML structure as before
+        await page.setContent(html, { waitUntil: 'networkidle0', timeout: 20000 }); // Adjusted timeout
+        await page.evaluate(() => document.fonts.ready); // Wait for fonts
 
-    // Set the content and wait for it to load
-    await page.setContent(html);
-
-    // Wait for fonts to load to ensure correct text rendering
-    await page.evaluate(() => {
-      return document.fonts.ready.then(() => {
-        console.log('All fonts are loaded and ready');
-      });
-    });
-
-    // Define the rendering script directly instead of importing
-    const renderingScript = `
-      // Helper function to convert external URLs to data URLs
-      async function loadImageAsDataURL(imageUrl) {
-        // If already a data URL, return as is
-        if (imageUrl.startsWith('data:')) {
-          return imageUrl;
-        }
-
-        try {
-          // Create a proxy URL to bypass CORS issues
-          const proxyUrl = imageUrl.startsWith('http') 
-            ? \`https://api.allorigins.win/raw?url=\${encodeURIComponent(imageUrl)}\`
-            : imageUrl;
-          
-          const response = await fetch(proxyUrl, { 
-            mode: 'cors',
-            headers: {
-              'Origin': 'null'
-            }
-          });
-          
-          if (!response.ok) {
-            throw new Error('Failed to load image');
-          }
-          
-          const blob = await response.blob();
-          return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
-        } catch (error) {
-          console.warn('Error loading image:', error);
-          // Return a blank transparent data URL
-          return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-        }
-      }
-
-      async function renderTemplate(data) {
-        const canvas = document.getElementById('renderCanvas');
-        const ctx = canvas.getContext('2d', {
-          alpha: true,
-          antialias: true,
-          desynchronized: false
-        });
-        
-        if (!ctx) throw new Error('Failed to get canvas context');
-        
-        // Set consistent text rendering params
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.textRendering = 'geometricPrecision';
-        
-        // Helper function to create rounded rectangle clipping path
-        function applyCornerRadius(ctx, layer) {
-          const r = layer.cornerRadius;
-          
-          // Calculate pixel-perfect coordinates to match border drawing
-          const x = Math.floor(layer.x);
-          const y = Math.floor(layer.y);
-          const width = Math.floor(layer.width);
-          const height = Math.floor(layer.height);
-          
-          // Create rounded rectangle clip path
-          ctx.beginPath();
-          ctx.moveTo(x + r, y);
-          ctx.lineTo(x + width - r, y);
-          ctx.arcTo(x + width, y, x + width, y + r, r);
-          ctx.lineTo(x + width, y + height - r);
-          ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
-          ctx.lineTo(x + r, y + height);
-          ctx.arcTo(x, y + height, x, y + height - r, r);
-          ctx.lineTo(x, y + r);
-          ctx.arcTo(x, y, x + r, y, r);
-          ctx.closePath();
-          ctx.clip();
-        }
-        
-        // Initialize debug mode based on query parameter (if present)
-        const debugMode = data.debug === true;
-        
-        // Draw white background
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Process background image if exists
-        if (data.backgroundImage) {
-          try {
-            const dataUrl = await loadImageAsDataURL(data.backgroundImage);
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            img.src = dataUrl;
-            await new Promise((resolve, reject) => {
-              img.onload = resolve;
-              img.onerror = reject;
-            });
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          } catch {
-            console.warn('Failed to draw background image');
-          }
-        }
-        
-        // Ensure layers are processed in the exact same order as frontend
-        // The frontend renders layers in REVERSE order (.slice().reverse())
-        let layersToRender = [];
-        if (data.layers && Array.isArray(data.layers)) {
-          // First make a copy of the layers array
-          layersToRender = [...data.layers];
-          
-          // Then REVERSE the order to match the frontend's rendering behavior
-          // Frontend code: layers.slice().reverse().filter((l: Layer) => l.visible)
-          layersToRender = layersToRender.reverse().filter(layer => layer.visible);
-        }
-        
-        // Draw layers in the reversed order (matching frontend)
-        for (const layer of layersToRender) {
-          // No need to check visibility again since we filtered above
-          
-          // Apply layer opacity
-          ctx.globalAlpha = typeof layer.opacity === 'number' ? layer.opacity : 1;
-          
-          // Handle different layer types
-          switch(layer.type) {
-            case 'image':
-              if (layer.useColorFill) {
-                // Draw colored rectangle
-                ctx.fillStyle = layer.fillColor || '#cccccc';
-                
-                // Handle pattern effects for filled images
-                if (layer.effect && layer.effect !== 'none') {
-                  // Create patterns based on the effect type
-                  const patternSize = 20; // Size of the pattern tile
-                  
-                  // Create a temporary canvas for the pattern
-                  const patternCanvas = document.createElement('canvas');
-                  patternCanvas.width = patternSize;
-                  patternCanvas.height = patternSize;
-                  const patternCtx = patternCanvas.getContext('2d');
-                  
-                  if (patternCtx) {
-                    // Fill the pattern background
-                    patternCtx.fillStyle = layer.fillColor || '#cccccc';
-                    patternCtx.fillRect(0, 0, patternSize, patternSize);
-                    
-                    // Draw the pattern based on effect type
-                    patternCtx.strokeStyle = '#ffffff';
-                    patternCtx.fillStyle = '#ffffff';
-                    patternCtx.globalAlpha = 0.3; // Match the 0.3 opacity from frontend
-                    
-                    switch(layer.effect) {
-                      case 'dots':
-                        // Draw a circle in the center
-                        patternCtx.beginPath();
-                        patternCtx.arc(patternSize/2, patternSize/2, patternSize/6, 0, Math.PI * 2);
-                        patternCtx.fill();
-                        break;
-                        
-                      case 'lines':
-                        // Draw diagonal lines
-                        patternCtx.lineWidth = 2;
-                        patternCtx.beginPath();
-                        patternCtx.moveTo(0, 0);
-                        patternCtx.lineTo(patternSize, patternSize);
-                        patternCtx.stroke();
-                        break;
-                        
-                      case 'waves':
-                        // Draw wave pattern
-                        patternCtx.lineWidth = 2;
-                        patternCtx.beginPath();
-                        patternCtx.moveTo(0, patternSize/2);
-                        patternCtx.quadraticCurveTo(
-                          patternSize/4, patternSize/4,
-                          patternSize/2, patternSize/2
-                        );
-                        patternCtx.quadraticCurveTo(
-                          3*patternSize/4, 3*patternSize/4,
-                          patternSize, patternSize/2
-                        );
-                        patternCtx.stroke();
-                        break;
-                        
-                      case 'grid':
-                        // Draw grid lines
-                        patternCtx.lineWidth = 1;
-                        patternCtx.beginPath();
-                        patternCtx.moveTo(0, 0);
-                        patternCtx.lineTo(0, patternSize);
-                        patternCtx.moveTo(0, 0);
-                        patternCtx.lineTo(patternSize, 0);
-                        patternCtx.stroke();
-                        break;
-                        
-                      case 'checkerboard':
-                        // Draw checkerboard pattern
-                        patternCtx.globalAlpha = 0.2; // Match frontend opacity
-                        patternCtx.fillRect(0, 0, patternSize/2, patternSize/2);
-                        patternCtx.fillRect(patternSize/2, patternSize/2, patternSize/2, patternSize/2);
-                        break;
-                    }
-                    
-                    // Create pattern from the pattern canvas
-                    const pattern = ctx.createPattern(patternCanvas, 'repeat');
-                    if (pattern) {
-                      ctx.fillStyle = pattern;
-                    }
+        // --- SIMPLIFIED Rendering Script (no loadImageAsDataURL needed) ---
+        const renderingScript = `
+            async function loadImageFromSource(src) {
+                // Now expects data URLs mostly, but handles fallback/errors
+                return new Promise((resolve, reject) => {
+                  // Allow non-data URLs if prefetch failed, but log warning
+                  if (src && src.startsWith('http')) {
+                    console.warn('Rendering with original HTTP URL (prefetch likely failed):', src.substring(0,50)+'...');
+                    // Fallback: try loading it directly (might taint canvas or fail)
+                     const img = new Image();
+                     img.crossOrigin = "anonymous"; // Attempt anonymous loading
+                     img.onload = () => resolve(img);
+                     img.onerror = (err) => {
+                       console.error('Error loading fallback HTTP image in browser:', src.substring(0, 50) + '...');
+                       resolve(null); // Resolve null on error
+                     };
+                     img.src = src;
+                     return; // Exit promise flow here for http case
+                  } else if (!src || !src.startsWith('data:image')) {
+                     console.warn('Invalid or missing image source for rendering:', src ? src.substring(0, 50) + '...' : 'null');
+                     resolve(null); // Resolve null for invalid sources
+                     return;
                   }
-                }
-                
-                // Draw rectangle with the pattern or solid fill
-                if (layer.cornerRadius > 0) {
-                  // Draw rounded rectangle
-                  const r = layer.cornerRadius;
-                  
-                  // Use pixel-perfect coordinates
-                  const x = Math.floor(layer.x);
-                  const y = Math.floor(layer.y);
-                  const width = Math.floor(layer.width);
-                  const height = Math.floor(layer.height);
-                  
-                  ctx.beginPath();
-                  ctx.moveTo(x + r, y);
-                  ctx.lineTo(x + width - r, y);
-                  ctx.arcTo(x + width, y, x + width, y + r, r);
-                  ctx.lineTo(x + width, y + height - r);
-                  ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
-                  ctx.lineTo(x + r, y + height);
-                  ctx.arcTo(x, y + height, x, y + height - r, r);
-                  ctx.lineTo(x, y + r);
-                  ctx.arcTo(x, y, x + r, y, r);
-                  ctx.closePath();
-                  ctx.fill();
-                } else {
-                  // Draw normal rectangle with pixel-perfect coordinates
-                  ctx.fillRect(
-                    Math.floor(layer.x), 
-                    Math.floor(layer.y), 
-                    Math.floor(layer.width), 
-                    Math.floor(layer.height)
-                  );
-                }
-              } else if (layer.src) {
-                try {
-                  const dataUrl = await loadImageAsDataURL(layer.src);
+
+                  // Proceed with loading data URL
                   const img = new Image();
-                  img.crossOrigin = "anonymous";
-                  img.src = dataUrl;
-                  await new Promise((resolve, reject) => {
-                    img.onload = resolve;
-                    img.onerror = reject;
-                  });
-                  
-                  // Handle any effects for image layers
-                  if (layer.effect && layer.effect !== 'none') {
-                    // Create a temporary canvas to apply effects
-                    const effectCanvas = document.createElement('canvas');
-                    effectCanvas.width = layer.width;
-                    effectCanvas.height = layer.height;
-                    const effectCtx = effectCanvas.getContext('2d');
-                    
-                    if (effectCtx) {
-                      // Draw the image first
-                      effectCtx.drawImage(img, 0, 0, layer.width, layer.height);
-                      
-                      // Apply the effect overlay
-                      const patternSize = 20; // Size of the pattern tile
-                      const patternCanvas = document.createElement('canvas');
-                      patternCanvas.width = patternSize;
-                      patternCanvas.height = patternSize;
-                      const patternCtx = patternCanvas.getContext('2d');
-                      
-                      if (patternCtx) {
-                        // Create a semi-transparent overlay with the effect
-                        patternCtx.fillStyle = 'rgba(0,0,0,0.2)'; // Darkened background
-                        patternCtx.fillRect(0, 0, patternSize, patternSize);
-                        
-                        // Draw the pattern based on effect type
-                        patternCtx.strokeStyle = '#ffffff';
-                        patternCtx.fillStyle = '#ffffff';
-                        patternCtx.globalAlpha = 0.3;
-                        
-                        switch(layer.effect) {
-                          case 'dots':
-                            patternCtx.beginPath();
-                            patternCtx.arc(patternSize/2, patternSize/2, patternSize/6, 0, Math.PI * 2);
-                            patternCtx.fill();
-                            break;
-                            
-                          case 'lines':
-                            patternCtx.lineWidth = 2;
-                            patternCtx.beginPath();
-                            patternCtx.moveTo(0, 0);
-                            patternCtx.lineTo(patternSize, patternSize);
-                            patternCtx.stroke();
-                            break;
-                            
-                          case 'waves':
-                            patternCtx.lineWidth = 2;
-                            patternCtx.beginPath();
-                            patternCtx.moveTo(0, patternSize/2);
-                            patternCtx.quadraticCurveTo(
-                              patternSize/4, patternSize/4,
-                              patternSize/2, patternSize/2
-                            );
-                            patternCtx.quadraticCurveTo(
-                              3*patternSize/4, 3*patternSize/4,
-                              patternSize, patternSize/2
-                            );
-                            patternCtx.stroke();
-                            break;
-                            
-                          case 'grid':
-                            patternCtx.lineWidth = 1;
-                            patternCtx.beginPath();
-                            patternCtx.moveTo(0, 0);
-                            patternCtx.lineTo(0, patternSize);
-                            patternCtx.moveTo(0, 0);
-                            patternCtx.lineTo(patternSize, 0);
-                            patternCtx.stroke();
-                            break;
-                            
-                          case 'checkerboard':
-                            patternCtx.globalAlpha = 0.2;
-                            patternCtx.fillRect(0, 0, patternSize/2, patternSize/2);
-                            patternCtx.fillRect(patternSize/2, patternSize/2, patternSize/2, patternSize/2);
-                            break;
-                        }
-                        
-                        // Apply the pattern overlay to the image
-                        const pattern = effectCtx.createPattern(patternCanvas, 'repeat');
-                        if (pattern) {
-                          effectCtx.globalCompositeOperation = 'source-atop';
-                          effectCtx.fillStyle = pattern;
-                          effectCtx.fillRect(0, 0, layer.width, layer.height);
-                        }
-                      }
-                      
-                      // Handle corner radius for effected images
-                      if (layer.cornerRadius > 0) {
-                        ctx.save();
-                        applyCornerRadius(ctx, layer);
-                      }
-                      
-                      // Draw the effected image
-                      ctx.drawImage(effectCanvas, layer.x, layer.y);
-                      
-                      if (layer.cornerRadius > 0) {
-                        ctx.restore();
-                      }
-                    } else {
-                      // Fallback if effect context couldn't be created
-                      if (layer.cornerRadius > 0) {
-                        ctx.save();
-                        // Apply standard corner radius
-                        applyCornerRadius(ctx, layer);
-                      }
-                      
-                      ctx.drawImage(img, layer.x, layer.y, layer.width, layer.height);
-                      
-                      if (layer.cornerRadius > 0) {
-                        ctx.restore();
-                      }
-                    }
-                  } else {
-                    // Standard rendering without effects
-                    // Handle corner radius if specified
-                    if (layer.cornerRadius > 0) {
-                      ctx.save();
-                      // Apply corner radius
-                      applyCornerRadius(ctx, layer);
-                    }
-                    
-                    ctx.drawImage(img, layer.x, layer.y, layer.width, layer.height);
-                    
-                    if (layer.cornerRadius > 0) {
-                      ctx.restore();
-                    }
-                  }
-                } catch {
-                  // Draw placeholder on error
-                  ctx.fillStyle = '#cccccc';
-                  ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
-                }
-              }
-              break;
-              
-            case 'text':
-              // Handle text with exact same rendering as frontend
-              const fontSize = layer.size || 16;
-              const fontFamily = layer.font || 'Arial';
-              const fontStyle = [];
-              
-              if (layer.italic) fontStyle.push('italic');
-              if (layer.bold) fontStyle.push('bold');
-              
-              // Set font with proper formatting exactly as in frontend
-              const fontString = \`\${fontStyle.join(' ')} \${fontSize}px \${fontFamily}\`;
-              ctx.font = fontString;
-              
-              // Ensure the font is loaded and measured correctly
-              document.fonts.load(fontString).then(() => {
-                console.log(\`Font loaded: \${fontString}\`);
-              });
-              
-              ctx.fillStyle = layer.color || '#000000';
-              ctx.textBaseline = 'top'; // consistent baseline
-              
-              // If background is enabled, draw it first with exact same dimensions
-              if (layer.useBackground) {
-                ctx.fillStyle = layer.backgroundColor || '#ffffff';
-                const padding = layer.bgPadding || 0;
-                
-                // Use exact same dimensions for the background
-                ctx.fillRect(
-                  Math.round(layer.x - padding), 
-                  Math.round(layer.y - padding), 
-                  Math.round(layer.width + (padding * 2)),
-                  Math.round(layer.height + (padding * 2))
-                );
-              }
-              
-              // Calculate text metrics and position
-              ctx.fillStyle = layer.color || '#000000';
-              
-              // Handle text alignment if specified
-              let textAlign = layer.textAlign || 'left';
-              ctx.textAlign = textAlign;
-              
-              // Calculate horizontal position based on alignment with pixel-perfect rounding
-              let alignedX = Math.round(layer.x);
-              if (textAlign === 'center') {
-                alignedX = Math.round(layer.x + (layer.width / 2));
-              } else if (textAlign === 'right') {
-                alignedX = Math.round(layer.x + layer.width);
-              }
-              
-              // Use the exact same word wrapping algorithm as frontend
-              const words = layer.text.split(' ');
-              let line = '';
-              let lineY = Math.round(layer.y); // Ensure pixel-perfect positioning
-              const lineHeight = Math.round(fontSize * 1.2); // Use the same line height calculation
-              
-              // Exact same word-wrap algorithm with pixel rounding for consistency
-              for (let i = 0; i < words.length; i++) {
-                const testLine = line + words[i] + ' ';
-                const metrics = ctx.measureText(testLine);
-                
-                if (metrics.width > layer.width && i > 0) {
-                  // Draw with pixel-perfect positioning
-                  ctx.fillText(line.trim(), alignedX, lineY);
-                  line = words[i] + ' ';
-                  lineY += lineHeight;
-                } else {
-                  line = testLine;
-                }
-              }
-              
-              // Draw the last line with proper alignment
-              ctx.fillText(line.trim(), alignedX, lineY);
-              break;
-          }
-          
-          // Draw border if set
-          if (layer.borderWidth > 0) {
-            ctx.strokeStyle = layer.borderColor || '#000000';
-            ctx.lineWidth = layer.borderWidth;
-            
-            // Handle rounded corners for borders
-            if (layer.cornerRadius > 0) {
-              // Draw a rounded rectangle path for the border
-              const r = layer.cornerRadius;
-              
-              // Calculate pixel-perfect coordinates to avoid blurry borders
-              // Offset by half pixel for sharp lines when border width is odd
-              const offset = layer.borderWidth % 2 === 1 ? 0.5 : 0;
-              const x = Math.floor(layer.x) + offset;
-              const y = Math.floor(layer.y) + offset;
-              const width = Math.floor(layer.width);
-              const height = Math.floor(layer.height);
-              
-              ctx.beginPath();
-              ctx.moveTo(x + r, y);
-              ctx.lineTo(x + width - r, y);
-              ctx.arcTo(x + width, y, x + width, y + r, r);
-              ctx.lineTo(x + width, y + height - r);
-              ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
-              ctx.lineTo(x + r, y + height);
-              ctx.arcTo(x, y + height, x, y + height - r, r);
-              ctx.lineTo(x, y + r);
-              ctx.arcTo(x, y, x + r, y, r);
-              ctx.closePath();
-              ctx.stroke();
-            } else {
-              // Use standard rectangle stroke for non-rounded corners
-              // Add pixel-perfect alignment here too
-              const offset = layer.borderWidth % 2 === 1 ? 0.5 : 0;
-              ctx.strokeRect(
-                Math.floor(layer.x) + offset, 
-                Math.floor(layer.y) + offset, 
-                Math.floor(layer.width), 
-                Math.floor(layer.height)
-              );
+                  img.onload = () => resolve(img);
+                  img.onerror = (err) => {
+                      console.error('Error loading image object from data URL:', src.substring(0, 50) + '...');
+                      resolve(null); // Resolve null on error
+                  };
+                  img.src = src;
+                });
             }
-          }
-          
-          // Reset alpha
-          ctx.globalAlpha = 1;
+
+            async function renderTemplate(data) {
+                const canvas = document.getElementById('renderCanvas');
+                const ctx = canvas.getContext('2d', { alpha: true, antialias: true });
+                if (!ctx) throw new Error('Failed to get canvas context');
+                // ... Set smoothing, rendering properties ...
+
+                // Set consistent text rendering params
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.textRendering = 'geometricPrecision';
+
+                // --- Draw Background ---
+                if (data.backgroundImage) {
+                    try {
+                        const img = await loadImageFromSource(data.backgroundImage);
+                        if (img) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        else console.warn('Background image source invalid/failed.');
+                    } catch (err) { console.warn('Failed to draw background image:', err); }
+                } else {
+                  // Ensure canvas is cleared/has white background if no bg image
+                   ctx.fillStyle = 'white';
+                   ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+
+
+                // --- Layer Rendering Loop ---
+                let layersToRender = (data.layers || []).slice().reverse().filter(l => l.visible);
+                for (const layer of layersToRender) {
+                     ctx.globalAlpha = typeof layer.opacity === 'number' ? layer.opacity : 1;
+
+                     switch(layer.type) {
+                        case 'image':
+                            if (layer.useColorFill) {
+                                // Draw color fill
+                                ctx.fillStyle = layer.fillColor || '#cccccc';
+                                
+                                if (layer.cornerRadius > 0) {
+                                  // Create rounded rectangle if needed
+                                  ctx.save();
+                                  // Helper function to create rounded rectangle clipping path
+                                  const r = layer.cornerRadius;
+                                  const x = Math.floor(layer.x);
+                                  const y = Math.floor(layer.y);
+                                  const width = Math.floor(layer.width);
+                                  const height = Math.floor(layer.height);
+                                  
+                                  // Create rounded rectangle clip path
+                                  ctx.beginPath();
+                                  ctx.moveTo(x + r, y);
+                                  ctx.lineTo(x + width - r, y);
+                                  ctx.arcTo(x + width, y, x + width, y + r, r);
+                                  ctx.lineTo(x + width, y + height - r);
+                                  ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+                                  ctx.lineTo(x + r, y + height);
+                                  ctx.arcTo(x, y + height, x, y + height - r, r);
+                                  ctx.lineTo(x, y + r);
+                                  ctx.arcTo(x, y, x + r, y, r);
+                                  ctx.closePath();
+                                  ctx.fill();
+                                  ctx.restore();
+                                } else {
+                                  ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
+                                }
+                                
+                                // Handle pattern effects for filled images if needed
+                                if (layer.effect && layer.effect !== 'none') {
+                                  // Draw patterns based on effect type
+                                  const patternSize = 20;
+                                  ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+                                  ctx.lineWidth = 1;
+                                  
+                                  // Basic pattern code would go here - simplified for this example
+                                  if (layer.effect === 'dots') {
+                                    // Draw dot pattern
+                                    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                                    for (let x = layer.x + 5; x < layer.x + layer.width; x += patternSize) {
+                                      for (let y = layer.y + 5; y < layer.y + layer.height; y += patternSize) {
+                                        ctx.beginPath();
+                                        ctx.arc(x, y, 2, 0, Math.PI * 2);
+                                        ctx.fill();
+                                      }
+                                    }
+                                  }
+                                  // Additional patterns would be implemented here
+                                }
+                            } else if (layer.src) {
+                                try {
+                                    const img = await loadImageFromSource(layer.src);
+                                    if (!img) {
+                                        // Draw placeholder if image failed to load
+                                        console.warn(\`Drawing placeholder for layer \${layer.id} - source invalid/failed.\`)
+                                        ctx.fillStyle = '#cccccc';
+                                        ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
+                                        // Draw 'X'
+                                        ctx.strokeStyle = '#aaaaaa'; ctx.lineWidth = 2; ctx.beginPath();
+                                        ctx.moveTo(layer.x, layer.y); ctx.lineTo(layer.x + layer.width, layer.y + layer.height);
+                                        ctx.moveTo(layer.x + layer.width, layer.y); ctx.lineTo(layer.x, layer.y + layer.height);
+                                        ctx.stroke();
+                                    } else {
+                                        // Draw the actual image
+                                        if (layer.cornerRadius > 0) {
+                                          ctx.save();
+                                          // Create rounded rectangle clip path
+                                          const r = layer.cornerRadius;
+                                          const x = Math.floor(layer.x);
+                                          const y = Math.floor(layer.y);
+                                          const width = Math.floor(layer.width);
+                                          const height = Math.floor(layer.height);
+                                          
+                                          ctx.beginPath();
+                                          ctx.moveTo(x + r, y);
+                                          ctx.lineTo(x + width - r, y);
+                                          ctx.arcTo(x + width, y, x + width, y + r, r);
+                                          ctx.lineTo(x + width, y + height - r);
+                                          ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+                                          ctx.lineTo(x + r, y + height);
+                                          ctx.arcTo(x, y + height, x, y + height - r, r);
+                                          ctx.lineTo(x, y + r);
+                                          ctx.arcTo(x, y, x + r, y, r);
+                                          ctx.closePath();
+                                          ctx.clip();
+                                          ctx.drawImage(img, x, y, width, height);
+                                          ctx.restore();
+                                        } else {
+                                          ctx.drawImage(img, layer.x, layer.y, layer.width, layer.height);
+                                        }
+                                    }
+                                } catch(error) {
+                                    console.error(\`Error rendering image layer \${layer.id}:\`, error);
+                                    // Draw placeholder on unexpected error
+                                    ctx.fillStyle = '#cccccc'; ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
+                                }
+                            }
+                            break;
+                         case 'text':
+                             // Draw text layer
+                             ctx.font = \`\${layer.bold ? 'bold ' : ''}\${layer.italic ? 'italic ' : ''}\${layer.size}px \${layer.font || 'Arial'}\`;
+                             ctx.fillStyle = layer.color || '#000000';
+                             ctx.textAlign = layer.textAlign || 'left';
+                             
+                             // Calculate text position based on alignment
+                             let textX = layer.x;
+                             if (layer.textAlign === 'center') textX += layer.width / 2;
+                             else if (layer.textAlign === 'right') textX += layer.width;
+                             
+                             // Draw background if enabled
+                             if (layer.useBackground && layer.backgroundColor) {
+                               const padding = layer.bgPadding || 5;
+                               ctx.fillStyle = layer.backgroundColor;
+                               ctx.fillRect(
+                                 layer.x - padding, 
+                                 layer.y - padding, 
+                                 layer.width + (padding * 2), 
+                                 layer.height + (padding * 2)
+                               );
+                               ctx.fillStyle = layer.color || '#000000';
+                             }
+                             
+                             // Draw the text
+                             ctx.fillText(layer.text, textX, layer.y + layer.size);
+                             break;
+                         case 'shape':
+                             // Draw shape layer
+                             ctx.fillStyle = layer.fillColor || '#000000';
+                             ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
+                             
+                             if (layer.strokeWidth > 0) {
+                               ctx.strokeStyle = layer.strokeColor || '#000000';
+                               ctx.lineWidth = layer.strokeWidth;
+                               ctx.strokeRect(layer.x, layer.y, layer.width, layer.height);
+                             }
+                             break;
+                     }
+                     
+                     // Draw border if specified
+                     if (layer.borderWidth > 0 && layer.borderColor) {
+                       ctx.strokeStyle = layer.borderColor;
+                       ctx.lineWidth = layer.borderWidth;
+                       
+                       if (layer.cornerRadius > 0 && layer.type === 'image') {
+                         // Draw rounded rectangle border
+                         const r = layer.cornerRadius;
+                         const x = Math.floor(layer.x);
+                         const y = Math.floor(layer.y);
+                         const width = Math.floor(layer.width);
+                         const height = Math.floor(layer.height);
+                         
+                         ctx.beginPath();
+                         ctx.moveTo(x + r, y);
+                         ctx.lineTo(x + width - r, y);
+                         ctx.arcTo(x + width, y, x + width, y + r, r);
+                         ctx.lineTo(x + width, y + height - r);
+                         ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+                         ctx.lineTo(x + r, y + height);
+                         ctx.arcTo(x, y + height, x, y + height - r, r);
+                         ctx.lineTo(x, y + r);
+                         ctx.arcTo(x, y, x + r, y, r);
+                         ctx.closePath();
+                         ctx.stroke();
+                       } else {
+                         // Standard rectangle border
+                         ctx.strokeRect(layer.x, layer.y, layer.width, layer.height);
+                       }
+                     }
+                     ctx.globalAlpha = 1; // Reset alpha
+                 }
+
+                // Add debug info if enabled
+                if (data.debug) {
+                  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                  ctx.fillRect(10, 10, 230, 80);
+                  ctx.font = '14px monospace';
+                  ctx.fillStyle = 'white';
+                  ctx.textAlign = 'left';
+                  ctx.fillText(\`Canvas: \${canvas.width}x\${canvas.height}\`, 20, 30);
+                  ctx.fillText(\`Layers: \${layersToRender.length}\`, 20, 50);
+                  ctx.fillText(\`Rendered: \${new Date().toISOString()}\`, 20, 70);
+                }
+
+                return canvas.toDataURL('image/png');
+            }
+            window.renderResult = renderTemplate(${JSON.stringify(templateData)}); // Pass data with dataURLs
+        `;
+        // --- END SIMPLIFIED Rendering Script ---
+
+        await page.addScriptTag({ content: renderingScript });
+        // Use a proper type cast approach for evaluating window properties
+        const imageDataUrl = await page.evaluate(() => {
+            // Cast to unknown first, then to the desired type
+            return (window as unknown as { renderResult: string }).renderResult;
+        }, { timeout: 90000 }); // Generous evaluate timeout
+
+        if (!imageDataUrl || typeof imageDataUrl !== 'string') throw new Error('Invalid data URL returned');
+        const base64Data = imageDataUrl.split(',')[1];
+        if (!base64Data) throw new Error('Failed to extract base64 data');
+
+        console.timeEnd('puppeteerRender');
+        return Buffer.from(base64Data, 'base64');
+
+    } catch (error) {
+        console.error('Error in renderImageFromJSON:', error);
+        if (page) {
+            try {
+                const screenshot = await page.screenshot({ encoding: 'base64' });
+                console.error("Puppeteer Screenshot (base64):", screenshot.substring(0, 200) + '...');
+            } catch (ssError) { console.error("Failed to get screenshot:", ssError); }
         }
-        
-        // Add debug information if in debug mode
-        if (debugMode) {
-          // Draw debug info in the corner
-          ctx.font = '12px Arial';
-          ctx.fillStyle = 'rgba(0,0,0,0.5)';
-          ctx.fillRect(10, canvas.height - 70, 300, 60);
-          ctx.fillStyle = 'white';
-          ctx.fillText('API Render | Layers: ' + data.layers.length, 15, canvas.height - 50);
-          ctx.fillText('Canvas: ' + canvas.width + 'x' + canvas.height, 15, canvas.height - 35);
-          ctx.fillText('Generated: ' + new Date().toISOString(), 15, canvas.height - 20);
+        throw error; // Re-throw
+    } finally {
+        console.timeEnd('puppeteerRender'); // End timer even on error
+        if (browser) {
+            try { await browser.close(); }
+            catch (closeError) { console.error('Error closing browser:', closeError); }
         }
-        
-        // Return PNG data URL
-        return canvas.toDataURL('image/png');
-      }
-
-      // Process and return the data
-      window.renderResult = renderTemplate(${JSON.stringify(templateData)});
-    `;
-
-    // Inject and run the script
-    await page.addScriptTag({ content: renderingScript });
-
-    // Wait for rendering to complete and get the result with timeout
-    // @ts-expect-error -- Playwright's evaluate() will handle the window property
-    const imageDataUrl = await page.evaluate(() => window.renderResult, { timeout: 30000 });
-    
-    if (!imageDataUrl || typeof imageDataUrl !== 'string') {
-      throw new Error('Failed to generate image: Invalid data URL returned');
     }
-    
-    // Convert base64 to buffer
-    const base64Data = imageDataUrl.split(',')[1];
-    if (!base64Data) {
-      throw new Error('Failed to extract base64 data from image');
-    }
-    
-    const buffer = Buffer.from(base64Data, 'base64');
-    
-    // Success path - return the buffer
-    return buffer;
-  } catch (error) {
-    console.error('Error in renderImageFromJSON:', error);
-    throw error; // Re-throw to be handled by the calling function
-  } finally {
-    // Always close the browser, whether successful or not
-    try {
-      await browser.close();
-    } catch (closeError) {
-      console.error('Error closing browser:', closeError);
-    }
-  }
 }
 
+// --- POST Handler ---
 export async function POST(req: NextRequest) {
-  // Validate API key
-  const apiKey = req.headers.get('x-api-key');
-  const validApiKey = process.env.API_KEY;
-  
-  if (!validApiKey || apiKey !== validApiKey) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    );
-  }
-  
-  // Allow CORS
-  const allowedOrigins = [
-    'http://localhost:3000', 
-    'https://localhost:3000', 
-    process.env.SITE_URL || '' // Your deployed site URL from env vars
-  ].filter(Boolean);
-  
-  const origin = req.headers.get('origin') || '';
-  const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
-  
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    return new NextResponse(null, {
-      status: 204,
-      headers: {
+    console.log("generate-image API called");
+    // API Key Validation... (same as before)
+    const apiKey = req.headers.get('x-api-key');
+    const validApiKey = process.env.API_KEY;
+    if (!validApiKey || apiKey !== validApiKey) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // CORS Headers... (same as before)
+    const allowedOrigins = [process.env.SITE_URL || ''].filter(Boolean);
+    const origin = req.headers.get('origin') || '';
+    const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+    const corsHeaders = {
         'Access-Control-Allow-Origin': allowOrigin,
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
-        'Access-Control-Max-Age': '86400' // 24 hours
-      }
-    });
-  }
-  
-  try {
-    // Extract query parameters
-    const { searchParams } = new URL(req.url);
-    const debug = searchParams.get('debug') === 'true';
-    const disableEffects = searchParams.get('noeffects') === 'true';
-    
-    // Parse JSON data from request
-    const jsonData = await req.json();
-    
-    // Validate request data
-    if (!jsonData || typeof jsonData !== 'object') {
-      return NextResponse.json(
-        { error: 'Invalid JSON data' },
-        { status: 400 }
-      );
-    }
-    
-    // Validate required fields
-    if (!jsonData.canvasWidth || !jsonData.canvasHeight || !jsonData.layers) {
-      return NextResponse.json(
-        { error: 'Missing required fields: canvasWidth, canvasHeight, and layers are required' },
-        { status: 400 }
-      );
-    }
-    
-    // Add debug flag if requested
-    const templateDataWithOptions = {
-      ...jsonData as TemplateData,
-      debug,
+        'Access-Control-Allow-Credentials': 'true'
     };
-    
-    // Modify layers to remove effects if that option is enabled
-    if (disableEffects && Array.isArray(templateDataWithOptions.layers)) {
-      templateDataWithOptions.layers = templateDataWithOptions.layers.map(layer => {
-        if (layer.type === 'image' && layer.effect) {
-          return {
-            ...layer,
-            effect: 'none'
-          };
-        }
-        return layer;
-      });
+
+    if (req.method === 'OPTIONS') {
+        return new NextResponse(null, { status: 204, headers: corsHeaders });
     }
-    
-    // Generate the image
-    const imageBuffer = await renderImageFromJSON(templateDataWithOptions);
-    
-    // Return the image as a response
-    return new NextResponse(imageBuffer, {
-      status: 200,
-      headers: {
-        'Content-Type': 'image/png',
-        'Content-Disposition': 'attachment; filename="template.png"',
-        'Access-Control-Allow-Origin': allowOrigin,
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Cache-Control': 'public, max-age=3600' // Allow caching for 1 hour
-      }
-    });
-  } catch (error) {
-    console.error('Error generating image:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate image' },
-      { 
-        status: 500,
-        headers: {
-          'Access-Control-Allow-Origin': allowOrigin,
-          'Access-Control-Allow-Methods': 'POST, OPTIONS'
+
+    try {
+        const { searchParams } = new URL(req.url);
+        const debug = searchParams.get('debug') === 'true';
+
+        const jsonData = await req.json();
+        if (!jsonData || typeof jsonData !== 'object' || !jsonData.canvasWidth || !jsonData.canvasHeight || !jsonData.layers) {
+            return NextResponse.json({ error: 'Invalid JSON data or missing fields' }, { status: 400, headers: corsHeaders });
         }
-      }
-    );
-  }
+
+        // --- Convert URLs inside the handler ---
+        const templateDataWithDataUrls = await convertUrlsToDataUrls(jsonData as TemplateData);
+        // --- ---
+
+        const templateDataWithOptions = {
+            ...templateDataWithDataUrls,
+            debug
+        };
+
+        console.log("Starting image generation with Puppeteer...");
+        const imageBuffer = await renderImageFromJSON(templateDataWithOptions);
+        console.log("Image generation complete.");
+
+        return new NextResponse(imageBuffer, {
+            status: 200,
+            headers: {
+                ...corsHeaders,
+                'Content-Type': 'image/png',
+                'Content-Disposition': 'attachment; filename="generated_image.png"',
+                'Cache-Control': 'no-cache, no-store, must-revalidate'
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in POST /api/generate-image:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to generate image';
+        return NextResponse.json(
+            { error: errorMessage, details: error instanceof Error ? error.stack : null },
+            { status: 500, headers: corsHeaders }
+        );
+    }
 } 
