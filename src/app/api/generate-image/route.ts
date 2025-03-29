@@ -565,7 +565,8 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                              const fontWeight = layer.bold ? '700 ' : '400 ';
                              const fontStyle = layer.italic ? 'italic ' : '';
                              const fontSize = layer.size + 'px';
-                             const fontFamily = layer.font || 'Inter'; // Default to Inter (changed from Arimo)
+                             // Force Inter font for all text layers in API rendering for testing
+                             const fontFamily = 'Inter'; // Was: layer.font || 'Inter';
                              
                              // Build full font string with fallbacks
                               let fullFontFamily = '"' + fontFamily + '"';
