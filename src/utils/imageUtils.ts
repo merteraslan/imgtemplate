@@ -592,7 +592,7 @@ export const exportSvgToPng = async (
           
           if (metrics.width > layer.width && i > 0) {
             // Draw current line and move to next line
-            ctx.fillText(line, textX, lineY + txtLayer.size);
+            ctx.fillText(line, textX, lineY);
             line = words[i] + ' ';
             lineY += lineHeight;
           } else {
@@ -602,7 +602,7 @@ export const exportSvgToPng = async (
         
         // Draw the last line (only if it fits within boundaries)
         if (lineY + lineHeight <= layer.y + layer.height) {
-          ctx.fillText(line, textX, lineY + txtLayer.size);
+          ctx.fillText(line, textX, lineY);
         }
         
         // Draw border if set
@@ -731,7 +731,7 @@ export const exportSvgToPng = async (
               
               if (metrics.width > foWidth && i > 0) {
                 // Draw current line and move to next line
-                ctx.fillText(line, textX, lineY + fontSize);
+                ctx.fillText(line, textX, lineY);
                 line = words[i] + ' ';
                 lineY += lineHeight;
               } else {
@@ -742,7 +742,7 @@ export const exportSvgToPng = async (
             // Draw the last line (only if it fits within boundaries)
             const foHeight = parseFloat(fo.getAttribute('height') || '0');
             if (lineY + lineHeight <= y + foHeight) {
-              ctx.fillText(line, textX, lineY + fontSize);
+              ctx.fillText(line, textX, lineY);
             }
             
             ctx.globalAlpha = 1;
@@ -924,7 +924,7 @@ export const exportSvgToPng = async (
         }
         
         // Position text with baseline adjustment to match API rendering
-        ctx.fillText(textContent, xPos, y + fontSize);
+        ctx.fillText(textContent, xPos, y);
         ctx.globalAlpha = 1;
       });
       
