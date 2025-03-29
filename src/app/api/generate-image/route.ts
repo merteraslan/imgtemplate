@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TemplateData, Layer, ImageLayer } from '@/types/templateTypes';
 import puppeteer, { Browser, Page } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
-import fetch from 'node-fetch'; // Or use native fetch if Node v18+
+// Native fetch is available in Node.js v18+ and Next.js environments
 
 // Configure route segment for longer processing
 export const maxDuration = 300; // 300 seconds timeout (Adjust as needed/allowed by plan)
@@ -54,7 +54,8 @@ async function convertUrlsToDataUrls(templateData: TemplateData): Promise<Templa
             if (!response.ok) {
                 throw new Error(`Status ${response.status}`);
             }
-            const buffer = await response.buffer();
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
             const contentType = response.headers.get('content-type') || 'image/png';
             const base64 = buffer.toString('base64');
             const dataUrl = `data:${contentType};base64,${base64}`;
