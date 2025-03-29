@@ -270,10 +270,10 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
         await page.evaluate(() => document.fonts.ready);
         await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
 
-        // Diagnostic: Create a test element to check computed font family for 'Arimo'
+        // Diagnostic: Create a test element to check computed font family for 'Inter'
         await page.evaluate(() => {
           const testEl = document.createElement('div');
-          testEl.style.fontFamily = "'Arimo', sans-serif";
+          testEl.style.fontFamily = "'Inter', sans-serif";
           testEl.textContent = 'Font Test';
           document.body.appendChild(testEl);
           const computed = window.getComputedStyle(testEl).fontFamily;
@@ -565,7 +565,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                              const fontWeight = layer.bold ? '700 ' : '400 ';
                              const fontStyle = layer.italic ? 'italic ' : '';
                              const fontSize = layer.size + 'px';
-                             const fontFamily = layer.font || 'Arimo'; // Default to Arimo (Arial replacement)
+                             const fontFamily = layer.font || 'Inter'; // Default to Inter (changed from Arimo)
                              
                              // Build full font string with fallbacks
                               let fullFontFamily = '"' + fontFamily + '"';
