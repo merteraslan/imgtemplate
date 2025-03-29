@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
-import path from "path"; // Use import syntax
+import path, { dirname } from "path"; // Use import syntax, add dirname
+import { fileURLToPath } from "url"; // Add fileURLToPath
+
+// Get the directory name in an ES module context
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const nextConfig = {
   output: "standalone", // Optimizes the output for Vercel
