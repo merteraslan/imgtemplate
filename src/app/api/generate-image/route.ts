@@ -321,19 +321,19 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                 
                                 // Handle pattern effects for filled images if needed
                                 if (layer.effect && layer.effect !== 'none') {
+                                  ctx.save(); // Save context before applying pattern alpha
                                   // Draw patterns based on effect type
                                   const patternSize = 20;
-                                  ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
-                                  ctx.lineWidth = 1;
-                                  
+                                  ctx.globalAlpha = 0.3; // Match frontend pattern alpha
+
                                   // Basic pattern code would go here - simplified for this example
                                   if (layer.effect === 'dots') {
                                     // Draw dot pattern
-                                    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-                                    for (let x = layer.x + 5; x < layer.x + layer.width; x += patternSize) {
-                                      for (let y = layer.y + 5; y < layer.y + layer.height; y += patternSize) {
+                                    ctx.fillStyle = '#ffffff'; // Use white for dots
+                                    for (let x = layer.x + patternSize/2; x < layer.x + layer.width; x += patternSize) {
+                                      for (let y = layer.y + patternSize/2; y < layer.y + layer.height; y += patternSize) {
                                         ctx.beginPath();
-                                        ctx.arc(x, y, 2, 0, Math.PI * 2);
+                                        ctx.arc(x, y, patternSize / 6, 0, Math.PI * 2);
                                         ctx.fill();
                                       }
                                     }
@@ -341,14 +341,10 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                     // Draw diagonal lines pattern
                                     ctx.beginPath();
                                     for (let i = 0; i < layer.width + layer.height; i += patternSize) {
-                                      // Start point - either on the top edge or left edge
                                       const startX = i <= layer.height ? layer.x : layer.x + i - layer.height;
                                       const startY = i <= layer.height ? layer.y + i : layer.y + layer.height;
-                                      
-                                      // End point - either on the right edge or bottom edge
                                       const endX = i <= layer.width ? layer.x + i : layer.x + layer.width;
                                       const endY = i <= layer.width ? layer.y : layer.y + i - layer.width;
-                                      
                                       ctx.moveTo(startX, startY);
                                       ctx.lineTo(endX, endY);
                                     }
@@ -363,14 +359,8 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                       for (let x = layer.x; x < layer.x + layer.width; x += patternSize) {
                                         if (x + patternSize <= layer.x + layer.width) {
                                           ctx.moveTo(x, y + patternSize/2);
-                                          ctx.quadraticCurveTo(
-                                            x + patternSize/4, y + patternSize/2 - waveHeight,
-                                            x + patternSize/2, y + patternSize/2
-                                          );
-                                          ctx.quadraticCurveTo(
-                                            x + 3*patternSize/4, y + patternSize/2 + waveHeight,
-                                            x + patternSize, y + patternSize/2
-                                          );
+                                          ctx.quadraticCurveTo(x + patternSize/4, y + patternSize/2 - waveHeight, x + patternSize/2, y + patternSize/2);
+                                          ctx.quadraticCurveTo(x + 3*patternSize/4, y + patternSize/2 + waveHeight, x + patternSize, y + patternSize/2);
                                         }
                                       }
                                     }
@@ -380,28 +370,46 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                   } else if (layer.effect === 'grid') {
                                     // Draw grid pattern
                                     ctx.beginPath();
-                                    
-                                    // Vertical lines
                                     for (let x = layer.x; x <= layer.x + layer.width; x += patternSize) {
                                       if (x >= layer.x && x <= layer.x + layer.width) {
                                         ctx.moveTo(x, layer.y);
                                         ctx.lineTo(x, layer.y + layer.height);
                                       }
                                     }
-                                    
-                                    // Horizontal lines
                                     for (let y = layer.y; y <= layer.y + layer.height; y += patternSize) {
                                       if (y >= layer.y && y <= layer.y + layer.height) {
                                         ctx.moveTo(layer.x, y);
                                         ctx.lineTo(layer.x + layer.width, y);
                                       }
                                     }
-                                    
                                     ctx.lineWidth = 1;
-                                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                                    ctx.strokeStyle = '#ffffff'; // Use white for grid lines
                                     ctx.stroke();
+                                  } else if (layer.effect === 'checkerboard') {
+                                     // Draw checkerboard pattern
+                                     ctx.fillStyle = '#ffffff'; // Use white for checkerboard
+                                     for (let x = layer.x; x < layer.x + layer.width; x += patternSize) {
+                                         for (let y = layer.y; y < layer.y + layer.height; y += patternSize) {
+                                             const availableWidth = Math.min(patternSize, layer.x + layer.width - x);
+                                             const availableHeight = Math.min(patternSize, layer.y + layer.height - y);
+                                             if (availableWidth < 1 || availableHeight < 1) continue;
+                                             if ((Math.floor((x - layer.x) / patternSize) + Math.floor((y - layer.y) / patternSize)) % 2 === 0) {
+                                                 ctx.fillRect(x, y, Math.min(patternSize/2, availableWidth), Math.min(patternSize/2, availableHeight));
+                                                 if (x + patternSize/2 < layer.x + layer.width && y + patternSize/2 < layer.y + layer.height) {
+                                                     ctx.fillRect(x + patternSize/2, y + patternSize/2, Math.min(patternSize/2, layer.x + layer.width - (x + patternSize/2)), Math.min(patternSize/2, layer.y + layer.height - (y + patternSize/2)));
+                                                 }
+                                             } else {
+                                                 if (x + patternSize/2 < layer.x + layer.width) {
+                                                     ctx.fillRect(x + patternSize/2, y, Math.min(patternSize/2, layer.x + layer.width - (x + patternSize/2)), Math.min(patternSize/2, availableHeight));
+                                                 }
+                                                 if (y + patternSize/2 < layer.y + layer.height) {
+                                                     ctx.fillRect(x, y + patternSize/2, Math.min(patternSize/2, availableWidth), Math.min(patternSize/2, layer.y + layer.height - (y + patternSize/2)));
+                                                 }
+                                             }
+                                         }
+                                     }
                                   }
-                                  // Additional patterns would be implemented here
+                                  ctx.restore(); // Restore context after applying pattern alpha
                                 }
                             } else if (layer.src) {
                                 try {
@@ -455,9 +463,9 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                          case 'text':
                              // Draw text layer with better font handling
                              // Special case handling for Impact/display fonts
-                             const useBoldFont = layer.bold || (layer.font && layer.font.toLowerCase().includes('impact'));
                              const fontStyle = layer.italic ? 'italic ' : '';
-                             const fontWeight = useBoldFont ? 'bold ' : '';
+                             // Use layer.fontWeight if available, otherwise determine based on layer.bold or font name
+                             const fontWeight = layer.fontWeight || (layer.bold || (layer.font && layer.font.toLowerCase().includes('impact')) ? 'bold ' : 'normal ');
                              const fontSize = layer.size + 'px';
                              const fontFamily = layer.font || 'Arial';
                              
@@ -471,8 +479,9 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                 fullFontFamily += ', sans-serif';
                              }
                              
-                             // Set complete font
-                             ctx.font = fontStyle + fontWeight + fontSize + ' ' + fullFontFamily;
+                             // Set complete font, ensure fontWeight has a space if not empty
+                             const finalFontWeight = fontWeight.trim() ? fontWeight.trim() + ' ' : '';
+                             ctx.font = fontStyle + finalFontWeight + fontSize + ' ' + fullFontFamily;
                              ctx.fillStyle = layer.color || '#000000';
                              ctx.textAlign = layer.textAlign || 'left';
                              
@@ -499,15 +508,16 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                              let line = '';
                              let lineY = layer.y;
                              const lineHeight = layer.size * 1.2; // Approximate line height
-                             const baselineOffset = Math.ceil(layer.size * 0.1); // Small baseline offset adjustment to match frontend
                              
+                             ctx.textBaseline = 'top'; // Ensure baseline is top
+
                              for (let i = 0; i < words.length; i++) {
                                const testLine = line + words[i] + ' ';
                                const metrics = ctx.measureText(testLine);
                                
                                if (metrics.width > layer.width && i > 0) {
                                  // Draw current line and move to next line
-                                 ctx.fillText(line, textX, lineY + layer.size - baselineOffset);
+                                 ctx.fillText(line, textX, lineY + layer.size); // Use standard y + size for top baseline
                                  line = words[i] + ' ';
                                  lineY += lineHeight;
                                  
@@ -522,7 +532,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                              
                              // Draw the last line only if it fits
                              if (lineY + lineHeight <= layer.y + layer.height) {
-                               ctx.fillText(line, textX, lineY + layer.size - baselineOffset);
+                               ctx.fillText(line, textX, lineY + layer.size); // Use standard y + size for top baseline
                              }
                              break;
                          case 'shape':
