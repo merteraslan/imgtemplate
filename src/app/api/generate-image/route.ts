@@ -325,6 +325,29 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                   // Draw patterns based on effect type
                                   const patternSize = 20;
                                   ctx.save();
+
+                                  // Apply clipping for rounded corners before drawing pattern
+                                  if (layer.cornerRadius > 0) {
+                                    const r = layer.cornerRadius;
+                                    const x = Math.floor(layer.x);
+                                    const y = Math.floor(layer.y);
+                                    const width = Math.floor(layer.width);
+                                    const height = Math.floor(layer.height);
+                                    
+                                    ctx.beginPath();
+                                    ctx.moveTo(x + r, y);
+                                    ctx.lineTo(x + width - r, y);
+                                    ctx.arcTo(x + width, y, x + width, y + r, r);
+                                    ctx.lineTo(x + width, y + height - r);
+                                    ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+                                    ctx.lineTo(x + r, y + height);
+                                    ctx.arcTo(x, y + height, x, y + height - r, r);
+                                    ctx.lineTo(x, y + r);
+                                    ctx.arcTo(x, y, x + r, y, r);
+                                    ctx.closePath();
+                                    ctx.clip(); // Clip subsequent drawing to this path
+                                  }
+
                                   ctx.globalAlpha = 0.3;
                                   ctx.strokeStyle = '#ffffff';
                                   ctx.fillStyle = '#ffffff';
@@ -470,6 +493,8 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                 fullFontFamily += ', "Arial Black", sans-serif';
                              } else if (fontFamily.toLowerCase().includes('arial black')) {
                                 fullFontFamily += ', Impact, sans-serif';
+                             } else if (fontFamily.toLowerCase().includes('helvetica')) { // Add Helvetica fallback
+                                fullFontFamily += ', Arial, sans-serif';
                              } else {
                                 fullFontFamily += ', sans-serif';
                              }
