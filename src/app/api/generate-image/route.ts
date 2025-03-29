@@ -4,7 +4,7 @@ import puppeteer from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 
 // Configure route segment for longer processing
-export const maxDuration = 60; // 60 seconds timeout
+export const maxDuration = 300; // 300 seconds timeout (Adjust as needed/allowed by plan)
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 
