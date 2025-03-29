@@ -195,23 +195,15 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
               font-display: block;
             }
             
-            /* Add @font-face rules here if loading from /fonts/ directly */
-            /* Example: */
-            /* @font-face { */
-            /*   font-family: 'Arimo'; */
-            /*   src: url('/fonts/arimo-latin-400-normal.woff2') format('woff2'); */
-            /*   font-weight: 400; */
-            /*   font-style: normal; */
-            /*   font-display: block; */
-            /* } */
-            /* @font-face { */
-            /*   font-family: 'Arimo'; */
-            /*   src: url('/fonts/arimo-latin-700-normal.woff2') format('woff2'); */
-            /*   font-weight: 700; */
-            /*   font-style: normal; */
-            /*   font-display: block; */
-            /* } */
-            /* ... etc. for Inter, Tinos, Cousine ... */
+            /* Load fonts explicitly from /public/fonts */
+            @font-face { font-family: 'Arimo'; src: url('/fonts/arimo-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
+            @font-face { font-family: 'Arimo'; src: url('/fonts/arimo-latin-700-normal.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
+            @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
+            @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-700-normal.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
+            @font-face { font-family: 'Tinos'; src: url('/fonts/tinos-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
+            @font-face { font-family: 'Tinos'; src: url('/fonts/tinos-latin-700-normal.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
+            @font-face { font-family: 'Cousine'; src: url('/fonts/cousine-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
+            @font-face { font-family: 'Cousine'; src: url('/fonts/cousine-latin-700-normal.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
           </style>
         </head>
         <body>
@@ -231,6 +223,25 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
       </html>`; // Same HTML structure as before
         await page.setContent(html, { waitUntil: 'networkidle0', timeout: 20000 }); // Adjusted timeout
         await page.evaluate(() => document.fonts.ready); // Wait for fonts
+
+        // Add font loading diagnostics
+        await page.evaluate(() => {
+          console.log('Checking computed font styles after document.fonts.ready...');
+          const fontsToTest = ['Arimo', 'Inter', 'Tinos', 'Cousine', 'Impact', 'Arial Black'];
+          const results: { [key: string]: string } = {};
+          fontsToTest.forEach(font => {
+            const el = document.createElement('div');
+            el.style.position = 'absolute';
+            el.style.left = '-9999px'; // Hide off-screen
+            el.style.fontFamily = `"${font}"`; // Apply specific font
+            el.textContent = 'test';
+            document.body.appendChild(el);
+            results[font] = window.getComputedStyle(el).fontFamily;
+            document.body.removeChild(el); // Clean up
+          });
+          console.log('Computed font families:', JSON.stringify(results));
+          // Note: This check doesn't guarantee rendering correctness but indicates if the browser *recognizes* the font.
+        });
 
         // --- SIMPLIFIED Rendering Script (no loadImageAsDataURL needed) ---
         const renderingScript = `
@@ -394,25 +405,43 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                     ctx.lineWidth = 2;
                                     ctx.stroke();
                                   } else if (layer.effect === 'waves') {
-                                    // Draw wave pattern
-                                    ctx.lineWidth = 2; // Set line width before loop
+                                    // Draw wave pattern using a temporary canvas for better clipping
                                     const waveHeight = patternSize / 4;
-                                    for (let y = layer.y; y < layer.y + layer.height; y += patternSize) {
-                                      ctx.beginPath(); // Start path for each row
-                                      for (let x = layer.x; x < layer.x + layer.width; x += patternSize) {
-                                        if (x + patternSize <= layer.x + layer.width) {
-                                          ctx.moveTo(x, y + patternSize/2);
-                                          ctx.quadraticCurveTo(
-                                            x + patternSize/4, y + patternSize/2 - waveHeight,
-                                            x + patternSize/2, y + patternSize/2
-                                          );
-                                          ctx.quadraticCurveTo(
-                                            x + 3*patternSize/4, y + patternSize/2 + waveHeight,
-                                            x + patternSize, y + patternSize/2
-                                          );
+                                    // Create a temporary canvas matching the layer size
+                                    const tempCanvas = document.createElement('canvas');
+                                    tempCanvas.width = Math.floor(layer.width);
+                                    tempCanvas.height = Math.floor(layer.height);
+                                    const tempCtx = tempCanvas.getContext('2d');
+
+                                    if (tempCtx) {
+                                      tempCtx.strokeStyle = ctx.strokeStyle;
+                                      tempCtx.fillStyle = ctx.fillStyle;
+                                      tempCtx.lineWidth = 2;
+                                      // Draw waves onto temp canvas relative to its origin (0,0)
+                                      for (let y = 0; y < tempCanvas.height; y += patternSize) {
+                                        tempCtx.beginPath();
+                                        for (let x = 0; x < tempCanvas.width; x += patternSize) {
+                                          if (x + patternSize <= tempCanvas.width) {
+                                            tempCtx.moveTo(x, y + patternSize / 2);
+                                            tempCtx.quadraticCurveTo(
+                                              x + patternSize / 4, y + patternSize / 2 - waveHeight,
+                                              x + patternSize / 2, y + patternSize / 2
+                                            );
+                                            tempCtx.quadraticCurveTo(
+                                              x + 3 * patternSize / 4, y + patternSize / 2 + waveHeight,
+                                              x + patternSize, y + patternSize / 2
+                                            );
+                                          }
                                         }
+                                        tempCtx.stroke();
                                       }
-                                      ctx.stroke(); // Stroke each row individually
+                                      // Set alpha before drawing the temp canvas
+                                      ctx.globalAlpha = 0.3;
+                                      // Draw the temporary canvas onto the main context (respects clip)
+                                      ctx.drawImage(tempCanvas, Math.floor(layer.x), Math.floor(layer.y));
+                                      ctx.globalAlpha = typeof layer.opacity === 'number' ? layer.opacity : 1; // Restore layer alpha if needed before next step
+                                    } else {
+                                      console.warn('Could not create temporary canvas for wave effect');
                                     }
                                   } else if (layer.effect === 'grid') {
                                     // Draw grid pattern
