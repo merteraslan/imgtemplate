@@ -6,14 +6,14 @@ import chromium from '@sparticuz/chromium';
 // Native fetch is available in Node.js v18+ and Next.js environments
 
 // --- Import Font Files (Webpack will inline these as Base64) ---
-import arimoRegularWoff2 from '../../../assets/fonts/arimo-latin-400-normal.woff2';
-import arimoBoldWoff2 from '../../../assets/fonts/arimo-latin-700-normal.woff2';
-import interRegularWoff2 from '../../../assets/fonts/inter-latin-400-normal.woff2';
-import interBoldWoff2 from '../../../assets/fonts/inter-latin-700-normal.woff2';
-import tinosRegularWoff2 from '../../../assets/fonts/tinos-latin-400-normal.woff2';
-import tinosBoldWoff2 from '../../../assets/fonts/tinos-latin-700-normal.woff2';
-import cousineRegularWoff2 from '../../../assets/fonts/cousine-latin-400-normal.woff2';
-import cousineBoldWoff2 from '../../../assets/fonts/cousine-latin-700-normal.woff2';
+import arimoRegularWoff2 from '@/assets/fonts/arimo-latin-400-normal.woff2';
+import arimoBoldWoff2 from '@/assets/fonts/arimo-latin-700-normal.woff2';
+import interRegularWoff2 from '@/assets/fonts/inter-latin-400-normal.woff2';
+import interBoldWoff2 from '@/assets/fonts/inter-latin-700-normal.woff2';
+import tinosRegularWoff2 from '@/assets/fonts/tinos-latin-400-normal.woff2';
+import tinosBoldWoff2 from '@/assets/fonts/tinos-latin-700-normal.woff2';
+import cousineRegularWoff2 from '@/assets/fonts/cousine-latin-400-normal.woff2';
+import cousineBoldWoff2 from '@/assets/fonts/cousine-latin-700-normal.woff2';
 // --- End Font Imports ---
 
 // Configure route segment for longer processing
