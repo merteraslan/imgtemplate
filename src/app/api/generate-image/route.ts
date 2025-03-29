@@ -136,8 +136,8 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     let embeddedFontStyles = '';
     for (const font of fontsToEmbed) {
         try {
-            // Construct path relative to project root (process.cwd() should work on Vercel)
-            const fontPath = path.resolve(process.cwd(), 'public', 'fonts', font.filename);
+            // Construct path relative to project root (reading from src/assets/fonts)
+            const fontPath = path.resolve(process.cwd(), 'src', 'assets', 'fonts', font.filename);
             if (fs.existsSync(fontPath)) {
                 const fontBuffer = fs.readFileSync(fontPath);
                 const base64Font = fontBuffer.toString('base64');
@@ -151,7 +151,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                     }
                 `;
             } else {
-                console.warn(`Font file not found in public/fonts: ${fontPath}`);
+                console.warn(`Font file not found in src/assets/fonts: ${fontPath}`);
             }
         } catch (error) {
             console.error(`Error loading font ${font.family} ${font.weight} (${font.filename}):`, error);
