@@ -144,6 +144,13 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
             }
         });
         page = await browser.newPage();
+
+        // Forward browser console logs to Node console
+        page.on('console', msg => console.log('PUPPETEER LOG:', msg.text()));
+        page.on('pageerror', error => console.error('PUPPETEER PAGE ERROR:', error.message));
+        page.on('requestfailed', request => console.log(`PUPPETEER REQ FAIL: ${request.url()} ${request.failure()?.errorText}`));
+        // You can also listen for 'response' to check font requests succeeded, but let's start with this.
+
         await page.setJavaScriptEnabled(true);
 
         const html = `<html>
@@ -235,24 +242,26 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
         // Add an explicit delay for fonts using evaluate
         await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
 
-        // Add font loading diagnostics
-        await page.evaluate(() => {
-          console.log('Checking computed font styles after document.fonts.ready...');
-          const fontsToTest = ['Arimo', 'Inter', 'Tinos', 'Cousine', 'Impact', 'Arial Black'];
-          const results: { [key: string]: string } = {};
+        // Add font loading diagnostics (simplified + using fonts.check)
+        await page.evaluate((fontsToTest) => {
+          console.log('--- DIAGNOSTIC: Checking fonts --- '); // Simple log first
+          const results: { [key: string]: { computed: string; check: boolean } } = {};
           fontsToTest.forEach(font => {
             const el = document.createElement('div');
             el.style.position = 'absolute';
-            el.style.left = '-9999px'; // Hide off-screen
-            el.style.fontFamily = `"${font}"`; // Apply specific font
+            el.style.left = '-9999px';
+            el.style.fontFamily = `"${font}"`; 
             el.textContent = 'test';
             document.body.appendChild(el);
-            results[font] = window.getComputedStyle(el).fontFamily;
-            document.body.removeChild(el); // Clean up
+            // Check both computed style and explicit font readiness
+            results[font] = {
+                 computed: window.getComputedStyle(el).fontFamily,
+                 check: document.fonts.check(`12px "${font}"`) // Use font shorthand check
+            };
+            document.body.removeChild(el);
           });
-          console.log('Computed font families:', JSON.stringify(results));
-          // Note: This check doesn't guarantee rendering correctness but indicates if the browser *recognizes* the font.
-        });
+          console.log('DIAGNOSTIC: Font check results:', JSON.stringify(results));
+        }, ['Arimo', 'Inter', 'Tinos', 'Cousine', 'Impact', 'Arial Black']); // Pass fonts as argument
 
         // --- SIMPLIFIED Rendering Script (no loadImageAsDataURL needed) ---
         const renderingScript = `
