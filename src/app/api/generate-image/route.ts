@@ -178,7 +178,29 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
             }
           </style>
           <!-- Preload common web fonts -->
-          <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&display=swap" rel="stylesheet">
+          <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
+          <!-- Add Impact font and other display fonts -->
+          <style>
+            @font-face {
+              font-family: 'Impact';
+              src: local('Impact');
+              font-display: block;
+            }
+            
+            /* Backup for Impact */
+            @font-face {
+              font-family: 'Arial Black';
+              src: local('Arial Black');
+              font-display: block;
+            }
+            
+            /* Add additional fonts that might be used in the template */
+            @font-face {
+              font-family: 'Verdana';
+              src: local('Verdana');
+              font-display: block;
+            }
+          </style>
         </head>
         <body>
           <div id="container">
@@ -190,6 +212,9 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
           <div style="position: absolute; visibility: hidden; font-family: 'Times New Roman'; font-size: 0;">.</div>
           <div style="position: absolute; visibility: hidden; font-family: 'Roboto'; font-size: 0;">.</div>
           <div style="position: absolute; visibility: hidden; font-family: 'Open Sans'; font-size: 0;">.</div>
+          <div style="position: absolute; visibility: hidden; font-family: 'Impact'; font-size: 0;">.</div>
+          <div style="position: absolute; visibility: hidden; font-family: 'Arial Black'; font-size: 0;">.</div>
+          <div style="position: absolute; visibility: hidden; font-family: 'Verdana'; font-size: 0;">.</div>
         </body>
       </html>`; // Same HTML structure as before
         await page.setContent(html, { waitUntil: 'networkidle0', timeout: 20000 }); // Adjusted timeout
@@ -328,7 +353,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                       ctx.lineTo(endX, endY);
                                     }
                                     ctx.lineWidth = 2;
-                                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                                    ctx.strokeStyle = '#ffffff'; // Use white for lines - match frontend
                                     ctx.stroke();
                                   } else if (layer.effect === 'waves') {
                                     // Draw wave pattern
@@ -350,7 +375,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                       }
                                     }
                                     ctx.lineWidth = 2;
-                                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                                    ctx.strokeStyle = '#ffffff'; // Use white for waves - match frontend
                                     ctx.stroke();
                                   } else if (layer.effect === 'grid') {
                                     // Draw grid pattern
@@ -428,8 +453,26 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                             }
                             break;
                          case 'text':
-                             // Draw text layer
-                             ctx.font = \`\${layer.bold ? 'bold ' : ''}\${layer.italic ? 'italic ' : ''}\${layer.size}px \${layer.font || 'Arial'}\`;
+                             // Draw text layer with better font handling
+                             // Special case handling for Impact/display fonts
+                             const useBoldFont = layer.bold || (layer.font && layer.font.toLowerCase().includes('impact'));
+                             const fontStyle = layer.italic ? 'italic ' : '';
+                             const fontWeight = useBoldFont ? 'bold ' : '';
+                             const fontSize = layer.size + 'px';
+                             const fontFamily = layer.font || 'Arial';
+                             
+                             // Build full font string with fallbacks
+                             let fullFontFamily = '"' + fontFamily + '"';
+                             if (fontFamily.toLowerCase().includes('impact')) {
+                                fullFontFamily += ', "Arial Black", sans-serif';
+                             } else if (fontFamily.toLowerCase().includes('arial black')) {
+                                fullFontFamily += ', Impact, sans-serif';
+                             } else {
+                                fullFontFamily += ', sans-serif';
+                             }
+                             
+                             // Set complete font
+                             ctx.font = fontStyle + fontWeight + fontSize + ' ' + fullFontFamily;
                              ctx.fillStyle = layer.color || '#000000';
                              ctx.textAlign = layer.textAlign || 'left';
                              
@@ -456,6 +499,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                              let line = '';
                              let lineY = layer.y;
                              const lineHeight = layer.size * 1.2; // Approximate line height
+                             const baselineOffset = Math.ceil(layer.size * 0.1); // Small baseline offset adjustment to match frontend
                              
                              for (let i = 0; i < words.length; i++) {
                                const testLine = line + words[i] + ' ';
@@ -463,7 +507,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                
                                if (metrics.width > layer.width && i > 0) {
                                  // Draw current line and move to next line
-                                 ctx.fillText(line, textX, lineY + layer.size);
+                                 ctx.fillText(line, textX, lineY + layer.size - baselineOffset);
                                  line = words[i] + ' ';
                                  lineY += lineHeight;
                                  
@@ -478,7 +522,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                              
                              // Draw the last line only if it fits
                              if (lineY + lineHeight <= layer.y + layer.height) {
-                               ctx.fillText(line, textX, lineY + layer.size);
+                               ctx.fillText(line, textX, lineY + layer.size - baselineOffset);
                              }
                              break;
                          case 'shape':
