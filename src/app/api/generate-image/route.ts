@@ -556,7 +556,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                              const fontFamily = layer.font || 'Arimo'; // Default to Arimo (Arial replacement)
                              
                              // Build full font string with fallbacks
-                              let fullFontFamily = '"' + fontFamily + '"';
+                              let fullFontFamily = fontFamily;
                               if (fontFamily.toLowerCase().includes('impact')) {
                                  fullFontFamily += ', "Arial Black", sans-serif';
                               } else if (fontFamily.toLowerCase().includes('arial black')) {
