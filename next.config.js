@@ -1,9 +1,4 @@
 /** @type {import('next').NextConfig} */
-import path, { dirname } from "path"; // Use import syntax, add dirname
-import { fileURLToPath } from "url"; // Add fileURLToPath
-
-// Get the directory name in an ES module context
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const nextConfig = {
   output: "standalone", // Optimizes the output for Vercel
@@ -23,10 +18,9 @@ const nextConfig = {
       ];
     }
 
-    // Add rule to inline .woff2 files from src/assets/fonts as Base64 data URLs
+    // Add rule to inline .woff2 files as Base64 data URLs
     config.module.rules.push({
       test: /\.woff2$/i, // Match .woff2 files (case-insensitive)
-      include: [path.resolve(__dirname, "src/assets/fonts")], // Target only our fonts directory
       type: "asset/inline", // Embed as a data URI
     });
 
