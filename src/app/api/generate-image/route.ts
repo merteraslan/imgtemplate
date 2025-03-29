@@ -3,7 +3,6 @@ import { TemplateData, Layer, ImageLayer } from '@/types/templateTypes';
 import puppeteer, { Browser, Page } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import fs from 'fs';
-import path from 'path';
 // Native fetch is available in Node.js v18+ and Next.js environments
 
 // Configure route segment for longer processing
@@ -136,26 +135,25 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     let embeddedFontStyles = '';
     for (const font of fontsToEmbed) {
         try {
-            // Resolve path relative to the current file's directory (__dirname is not reliable in Next.js API routes, use process.cwd())
-            // Adjust if your node_modules isn't at the root relative to where the process runs (Vercel usually handles this fine)
-            const fontPath = path.resolve(process.cwd(), 'node_modules', font.path);
-            if (fs.existsSync(fontPath)) {
-                const fontBuffer = fs.readFileSync(fontPath);
-                const base64Font = fontBuffer.toString('base64');
-                embeddedFontStyles += `
-                    @font-face {
-                        font-family: '${font.family}';
-                        font-style: ${font.style};
-                        font-weight: ${font.weight};
-                        font-display: block; /* or swap */
-                        src: url(data:font/woff2;base64,${base64Font}) format('woff2');
-                    }
-                `;
-            } else {
-                console.warn(`Font file not found: ${fontPath}`);
-            }
+            // Use require.resolve to find the absolute path to the font file
+            const fontPath = require.resolve(font.path);
+
+            // Check existence is less critical now, require.resolve throws if not found
+            // but we'll keep fs.readFileSync in a try-catch anyway
+            const fontBuffer = fs.readFileSync(fontPath);
+            const base64Font = fontBuffer.toString('base64');
+            embeddedFontStyles += `
+                @font-face {
+                    font-family: '${font.family}';
+                    font-style: ${font.style};
+                    font-weight: ${font.weight};
+                    font-display: block; /* or swap */
+                    src: url(data:font/woff2;base64,${base64Font}) format('woff2');
+                }
+            `;
         } catch (error) {
-            console.error(`Error loading font ${font.family} ${font.weight}:`, error);
+            // Log error if require.resolve or readFileSync fails
+            console.error(`Error loading font ${font.family} ${font.weight} (${font.path}):`, error);
         }
     }
     // --- End Font Loading Logic ---
