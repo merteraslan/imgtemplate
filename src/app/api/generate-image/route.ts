@@ -298,22 +298,149 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                 if (layer.effect && layer.effect !== 'none') {
                                   // Draw patterns based on effect type
                                   const patternSize = 20;
-                                  ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
-                                  ctx.lineWidth = 1;
+                                  ctx.save(); // Save context before applying patterns
                                   
-                                  // Basic pattern code would go here - simplified for this example
+                                  // Apply clipping if we have corner radius
+                                  if (layer.cornerRadius > 0) {
+                                    ctx.beginPath();
+                                    const r = layer.cornerRadius;
+                                    const x = Math.floor(layer.x);
+                                    const y = Math.floor(layer.y);
+                                    const width = Math.floor(layer.width);
+                                    const height = Math.floor(layer.height);
+                                    
+                                    ctx.beginPath();
+                                    ctx.moveTo(x + r, y);
+                                    ctx.lineTo(x + width - r, y);
+                                    ctx.arcTo(x + width, y, x + width, y + r, r);
+                                    ctx.lineTo(x + width, y + height - r);
+                                    ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+                                    ctx.lineTo(x + r, y + height);
+                                    ctx.arcTo(x, y + height, x, y + height - r, r);
+                                    ctx.lineTo(x, y + r);
+                                    ctx.arcTo(x, y, x + r, y, r);
+                                    ctx.closePath();
+                                    ctx.clip();
+                                  }
+                                  
+                                  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                                  ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                                  ctx.lineWidth = 2;
+                                  
                                   if (layer.effect === 'dots') {
                                     // Draw dot pattern
-                                    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-                                    for (let x = layer.x + 5; x < layer.x + layer.width; x += patternSize) {
-                                      for (let y = layer.y + 5; y < layer.y + layer.height; y += patternSize) {
+                                    const dotRadius = patternSize / 6;
+                                    // Loop through the grid of potential dot positions
+                                    for (let dotX = layer.x + patternSize/2; dotX < layer.x + layer.width; dotX += patternSize) {
+                                      for (let dotY = layer.y + patternSize/2; dotY < layer.y + layer.height; dotY += patternSize) {
                                         ctx.beginPath();
-                                        ctx.arc(x, y, 2, 0, Math.PI * 2);
+                                        ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
                                         ctx.fill();
                                       }
                                     }
+                                  } else if (layer.effect === 'lines') {
+                                    // Draw diagonal lines - stronger rendering to match frontend
+                                    ctx.beginPath();
+                                    ctx.lineWidth = 3;
+                                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                                    
+                                    // Draw more densely packed lines for better visibility
+                                    const lineSpacing = patternSize / 1.5;
+                                    for (let i = -layer.height; i < layer.width + layer.height; i += lineSpacing) {
+                                      // Start point - either on the top edge or left edge
+                                      const startX = i <= layer.height ? layer.x : layer.x + i - layer.height;
+                                      const startY = i <= layer.height ? layer.y + i : layer.y + layer.height;
+                                      
+                                      // End point - either on the right edge or bottom edge
+                                      const endX = i <= layer.width ? layer.x + i : layer.x + layer.width;
+                                      const endY = i <= layer.width ? layer.y : layer.y + i - layer.width;
+                                      
+                                      // Only draw if at least partly visible in bounds
+                                      if ((startX >= layer.x || startY <= layer.y + layer.height) && 
+                                          (endX <= layer.x + layer.width || endY >= layer.y)) {
+                                        ctx.moveTo(startX, startY);
+                                        ctx.lineTo(endX, endY);
+                                      }
+                                    }
+                                    ctx.stroke();
+                                  } else if (layer.effect === 'grid') {
+                                    // Draw grid
+                                    ctx.beginPath();
+                                    
+                                    // Vertical lines
+                                    for (let x = layer.x; x <= layer.x + layer.width; x += patternSize) {
+                                      ctx.moveTo(x, layer.y);
+                                      ctx.lineTo(x, layer.y + layer.height);
+                                    }
+                                    
+                                    // Horizontal lines
+                                    for (let y = layer.y; y <= layer.y + layer.height; y += patternSize) {
+                                      ctx.moveTo(layer.x, y);
+                                      ctx.lineTo(layer.x + layer.width, y);
+                                    }
+                                    
+                                    ctx.stroke();
+                                  } else if (layer.effect === 'checkerboard') {
+                                    // Draw checkerboard pattern
+                                    for (let x = layer.x; x < layer.x + layer.width; x += patternSize) {
+                                      for (let y = layer.y; y < layer.y + layer.height; y += patternSize) {
+                                        if ((Math.floor((x - layer.x) / patternSize) + Math.floor((y - layer.y) / patternSize)) % 2 === 0) {
+                                          ctx.fillRect(x, y, Math.min(patternSize, layer.x + layer.width - x), 
+                                                     Math.min(patternSize, layer.y + layer.height - y));
+                                        }
+                                      }
+                                    }
+                                  } else if (layer.effect === 'waves') {
+                                    // Draw wave pattern
+                                    ctx.beginPath();
+                                    const waveHeight = patternSize / 4;
+                                    for (let y = layer.y; y < layer.y + layer.height; y += patternSize) {
+                                      for (let x = layer.x; x < layer.x + layer.width; x += patternSize) {
+                                        ctx.moveTo(x, y + patternSize/2);
+                                        ctx.quadraticCurveTo(
+                                          x + patternSize/4, y + patternSize/2 - waveHeight,
+                                          x + patternSize/2, y + patternSize/2
+                                        );
+                                        ctx.quadraticCurveTo(
+                                          x + 3*patternSize/4, y + patternSize/2 + waveHeight,
+                                          x + patternSize, y + patternSize/2
+                                        );
+                                      }
+                                    }
+                                    ctx.stroke();
                                   }
-                                  // Additional patterns would be implemented here
+                                  
+                                  ctx.restore(); // Restore context after pattern
+                                }
+                                
+                                // Handle border if needed (separate from pattern effects)
+                                if (layer.borderWidth > 0) {
+                                  ctx.strokeStyle = layer.borderColor || '#000000';
+                                  ctx.lineWidth = layer.borderWidth;
+                                  
+                                  if (layer.cornerRadius > 0) {
+                                    // Draw rounded rectangle border
+                                    const r = layer.cornerRadius;
+                                    const x = Math.floor(layer.x);
+                                    const y = Math.floor(layer.y);
+                                    const width = Math.floor(layer.width);
+                                    const height = Math.floor(layer.height);
+                                    
+                                    ctx.beginPath();
+                                    ctx.moveTo(x + r, y);
+                                    ctx.lineTo(x + width - r, y);
+                                    ctx.arcTo(x + width, y, x + width, y + r, r);
+                                    ctx.lineTo(x + width, y + height - r);
+                                    ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+                                    ctx.lineTo(x + r, y + height);
+                                    ctx.arcTo(x, y + height, x, y + height - r, r);
+                                    ctx.lineTo(x, y + r);
+                                    ctx.arcTo(x, y, x + r, y, r);
+                                    ctx.closePath();
+                                    ctx.stroke();
+                                  } else {
+                                    ctx.strokeRect(layer.x, layer.y, layer.width, layer.height);
+                                  }
                                 }
                             } else if (layer.src) {
                                 try {
@@ -388,8 +515,50 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                ctx.fillStyle = layer.color || '#000000';
                              }
                              
-                             // Draw the text
-                             ctx.fillText(layer.text, textX, layer.y + layer.size);
+                             // Handle multiline text with proper baseline positioning
+                             const words = layer.text.split(' ');
+                             let line = '';
+                             let lineY = layer.y;
+                             const lineHeight = layer.size * 1.2; // Approximate line height
+                             
+                             if (words.length <= 1) {
+                               // Single word/line case
+                               ctx.fillText(layer.text, textX, lineY + layer.size);
+                             } else {
+                               // Check if this is a bullet point list
+                               const hasBullets = layer.text.includes('•') || layer.text.includes('·') || layer.text.includes('-');
+                               
+                               if (hasBullets && layer.text.includes('\n')) {
+                                 // Handle bullet point lists specifically
+                                 const lines = layer.text.split('\n');
+                                 let currentY = lineY + layer.size;
+                                 
+                                 for (const bulletLine of lines) {
+                                   if (bulletLine.trim()) {
+                                     ctx.fillText(bulletLine.trim(), textX, currentY);
+                                     currentY += lineHeight;
+                                   }
+                                 }
+                               } else {
+                                 // Standard multiline text wrapping
+                                 for (let i = 0; i < words.length; i++) {
+                                   const testLine = line + words[i] + ' ';
+                                   const metrics = ctx.measureText(testLine);
+                                   
+                                   if (metrics.width > layer.width && i > 0) {
+                                     // Draw current line and move to next line
+                                     ctx.fillText(line, textX, lineY + layer.size);
+                                     line = words[i] + ' ';
+                                     lineY += lineHeight;
+                                   } else {
+                                     line = testLine;
+                                   }
+                                 }
+                                 
+                                 // Draw the last line
+                                 ctx.fillText(line, textX, lineY + layer.size);
+                               }
+                             }
                              break;
                          case 'shape':
                              // Draw shape layer
