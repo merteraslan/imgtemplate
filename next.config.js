@@ -30,4 +30,4 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+export default nextConfig; // Use ES Module export
