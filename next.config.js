@@ -1,4 +1,8 @@
 /** @type {import('next').NextConfig} */
+import path, { dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const nextConfig = {
   output: "standalone", // Optimizes the output for Vercel
@@ -10,6 +14,11 @@ const nextConfig = {
     functionTimeout: 60, // 60 seconds timeout
   },
   webpack: (config, { isServer }) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "@": path.resolve(__dirname, "src"),
+    };
+
     if (isServer) {
       // Mark chromium as external to be properly included in the standalone output
       config.externals = [
