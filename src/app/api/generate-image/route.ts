@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TemplateData, Layer, ImageLayer } from '@/types/templateTypes';
 import puppeteer, { Browser, Page } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
+import fs from 'fs';
+import path from 'path';
 // Native fetch is available in Node.js v18+ and Next.js environments
 
 // Configure route segment for longer processing
@@ -118,13 +120,44 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     let browser: Browser | null = null;
     let page: Page | null = null;
 
-    // --- Determine Base URL for Fonts ---
-    // Use Vercel URL if available (includes http/https), otherwise default to localhost for dev
-    // Ensure NEXT_PUBLIC_APP_URL is set in your .env.local for local testing if needed
-    const baseUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'; 
-    // --- End Base URL Logic ---
+    // --- Font Loading Logic (Reading from public/fonts and Base64 embedding) ---
+    const fontsToEmbed = [
+        { family: 'Arimo', weight: '400', style: 'normal', filename: 'arimo-latin-400-normal.woff2' },
+        { family: 'Arimo', weight: '700', style: 'normal', filename: 'arimo-latin-700-normal.woff2' },
+        { family: 'Inter', weight: '400', style: 'normal', filename: 'inter-latin-400-normal.woff2' },
+        { family: 'Inter', weight: '700', style: 'normal', filename: 'inter-latin-700-normal.woff2' },
+        { family: 'Tinos', weight: '400', style: 'normal', filename: 'tinos-latin-400-normal.woff2' },
+        { family: 'Tinos', weight: '700', style: 'normal', filename: 'tinos-latin-700-normal.woff2' },
+        { family: 'Cousine', weight: '400', style: 'normal', filename: 'cousine-latin-400-normal.woff2' },
+        { family: 'Cousine', weight: '700', style: 'normal', filename: 'cousine-latin-700-normal.woff2' },
+        // Add any other fonts from public/fonts here
+    ];
+
+    let embeddedFontStyles = '';
+    for (const font of fontsToEmbed) {
+        try {
+            // Construct path relative to project root (process.cwd() should work on Vercel)
+            const fontPath = path.resolve(process.cwd(), 'public', 'fonts', font.filename);
+            if (fs.existsSync(fontPath)) {
+                const fontBuffer = fs.readFileSync(fontPath);
+                const base64Font = fontBuffer.toString('base64');
+                embeddedFontStyles += `
+                    @font-face {
+                        font-family: '${font.family}';
+                        font-style: ${font.style};
+                        font-weight: ${font.weight};
+                        font-display: block; /* or swap */
+                        src: url(data:font/woff2;base64,${base64Font}) format('woff2');
+                    }
+                `;
+            } else {
+                console.warn(`Font file not found in public/fonts: ${fontPath}`);
+            }
+        } catch (error) {
+            console.error(`Error loading font ${font.family} ${font.weight} (${font.filename}):`, error);
+        }
+    }
+    // --- End Font Loading Logic ---
 
     try {
         browser = await puppeteer.launch({ /* ... browser args ... */
@@ -144,12 +177,6 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
             }
         });
         page = await browser.newPage();
-
-        // Forward browser console logs to Node console
-        page.on('console', msg => console.log('PUPPETEER LOG:', msg.text()));
-        page.on('pageerror', error => console.error('PUPPETEER PAGE ERROR:', error.message));
-        page.on('requestfailed', request => console.log(`PUPPETEER REQ FAIL: ${request.url()} ${request.failure()?.errorText}`));
-        // You can also listen for 'response' to check font requests succeeded, but let's start with this.
 
         await page.setJavaScriptEnabled(true);
 
@@ -210,15 +237,8 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
               font-display: block;
             }
             
-            /* Load fonts explicitly from /public/fonts using absolute URLs */
-            @font-face { font-family: 'Arimo'; src: url(${baseUrl}/fonts/arimo-latin-400-normal.woff2) format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
-            @font-face { font-family: 'Arimo'; src: url(${baseUrl}/fonts/arimo-latin-700-normal.woff2) format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
-            @font-face { font-family: 'Inter'; src: url(${baseUrl}/fonts/inter-latin-400-normal.woff2) format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
-            @font-face { font-family: 'Inter'; src: url(${baseUrl}/fonts/inter-latin-700-normal.woff2) format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
-            @font-face { font-family: 'Tinos'; src: url(${baseUrl}/fonts/tinos-latin-400-normal.woff2) format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
-            @font-face { font-family: 'Tinos'; src: url(${baseUrl}/fonts/tinos-latin-700-normal.woff2) format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
-            @font-face { font-family: 'Cousine'; src: url(${baseUrl}/fonts/cousine-latin-400-normal.woff2) format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
-            @font-face { font-family: 'Cousine'; src: url(${baseUrl}/fonts/cousine-latin-700-normal.woff2) format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
+            /* Load fonts explicitly using embedded Base64 data */
+            ${embeddedFontStyles}
             /* Add any other fonts from public/fonts here */
           </style>
         </head>
@@ -239,29 +259,6 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
       </html>`; // Same HTML structure as before
         await page.setContent(html, { waitUntil: 'networkidle0', timeout: 20000 }); // Adjusted timeout
         await page.evaluate(() => document.fonts.ready); // Wait for fonts
-        // Add an explicit delay for fonts using evaluate
-        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
-
-        // Add font loading diagnostics (simplified + using fonts.check)
-        await page.evaluate((fontsToTest) => {
-          console.log('--- DIAGNOSTIC: Checking fonts --- '); // Simple log first
-          const results: { [key: string]: { computed: string; check: boolean } } = {};
-          fontsToTest.forEach(font => {
-            const el = document.createElement('div');
-            el.style.position = 'absolute';
-            el.style.left = '-9999px';
-            el.style.fontFamily = `"${font}"`; 
-            el.textContent = 'test';
-            document.body.appendChild(el);
-            // Check both computed style and explicit font readiness
-            results[font] = {
-                 computed: window.getComputedStyle(el).fontFamily,
-                 check: document.fonts.check(`12px "${font}"`) // Use font shorthand check
-            };
-            document.body.removeChild(el);
-          });
-          console.log('DIAGNOSTIC: Font check results:', JSON.stringify(results));
-        }, ['Arimo', 'Inter', 'Tinos', 'Cousine', 'Impact', 'Arial Black']); // Pass fonts as argument
 
         // --- SIMPLIFIED Rendering Script (no loadImageAsDataURL needed) ---
         const renderingScript = `
