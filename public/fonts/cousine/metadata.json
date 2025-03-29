@@ -1,0 +1,28 @@
+{
+  "id": "cousine",
+  "family": "Cousine",
+  "subsets": [
+    "cyrillic",
+    "cyrillic-ext",
+    "greek",
+    "greek-ext",
+    "hebrew",
+    "latin",
+    "latin-ext",
+    "vietnamese"
+  ],
+  "weights": [400, 700],
+  "styles": ["italic", "normal"],
+  "defSubset": "latin",
+  "variable": false,
+  "lastModified": "2024-09-04",
+  "version": "v27",
+  "category": "monospace",
+  "license": {
+    "type": "OFL-1.1",
+    "url": "http://scripts.sil.org/OFL",
+    "attribution": "Google Inc."
+  },
+  "source": "https://github.com/google/fonts",
+  "type": "google"
+}
