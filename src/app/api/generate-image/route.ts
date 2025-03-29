@@ -138,14 +138,10 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
         try {
             // Construct path relative to project root (cwd) -> src/assets/fonts/FONT_FAMILY/files/FONT_FILENAME
             const fontPath = path.join(process.cwd(), 'src', 'assets', 'fonts', font.family.toLowerCase(), 'files', font.fileName);
-            console.log(`[Font Check] Trying path: ${fontPath}`); // Log the path
-            const exists = fs.existsSync(fontPath);
-            console.log(`[Font Check] Exists? ${exists}`); // Log existence check
-
-            if (exists) {
+            
+            if (fs.existsSync(fontPath)) {
                 const fontBuffer = fs.readFileSync(fontPath);
                 const base64Font = fontBuffer.toString('base64');
-                console.log(`[Font Check] Read ${font.fileName}, Base64 starts with: ${base64Font.substring(0, 50)}...`); // Log Base64 snippet
                 embeddedFontStyles += `
                     @font-face {
                         font-family: '${font.family}';
@@ -268,7 +264,23 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
           <div style="position: absolute; visibility: hidden; font-family: 'Verdana'; font-size: 0;">.</div>
         </body>
       </html>`; // Same HTML structure as before
-        await page.setContent(html, { waitUntil: 'load', timeout: 20000 }); 
+        await page.setContent(html, { waitUntil: 'load', timeout: 20000 });
+
+        // Ensure that all embedded fonts have been loaded
+        await page.evaluate(() => document.fonts.ready);
+        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
+
+        // Diagnostic: Create a test element to check computed font family for 'Arimo'
+        await page.evaluate(() => {
+          const testEl = document.createElement('div');
+          testEl.style.fontFamily = "'Arimo', sans-serif";
+          testEl.textContent = 'Font Test';
+          document.body.appendChild(testEl);
+          const computed = window.getComputedStyle(testEl).fontFamily;
+          console.log('DEBUG: Computed font-family for test element:', computed);
+          // Optionally remove the test element
+          testEl.remove();
+        });
 
         // --- SIMPLIFIED Rendering Script (no loadImageAsDataURL needed) ---
         const renderingScript = `
@@ -556,7 +568,7 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                              const fontFamily = layer.font || 'Arimo'; // Default to Arimo (Arial replacement)
                              
                              // Build full font string with fallbacks
-                              let fullFontFamily = fontFamily;
+                              let fullFontFamily = '"' + fontFamily + '"';
                               if (fontFamily.toLowerCase().includes('impact')) {
                                  fullFontFamily += ', "Arial Black", sans-serif';
                               } else if (fontFamily.toLowerCase().includes('arial black')) {
