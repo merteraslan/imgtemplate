@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+import path from "path"; // Use import syntax
 
 const nextConfig = {
   output: "standalone", // Optimizes the output for Vercel
@@ -17,6 +18,14 @@ const nextConfig = {
         "@sparticuz/chromium",
       ];
     }
+
+    // Add rule to inline .woff2 files from src/assets/fonts as Base64 data URLs
+    config.module.rules.push({
+      test: /\.woff2$/i, // Match .woff2 files (case-insensitive)
+      include: [path.resolve(__dirname, "src/assets/fonts")], // Target only our fonts directory
+      type: "asset/inline", // Embed as a data URI
+    });
+
     return config;
   },
 };

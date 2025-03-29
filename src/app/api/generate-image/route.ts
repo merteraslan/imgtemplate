@@ -2,9 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TemplateData, Layer, ImageLayer } from '@/types/templateTypes';
 import puppeteer, { Browser, Page } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
-import fs from 'fs';
-import path from 'path';
+// REMOVED: fs and path imports
 // Native fetch is available in Node.js v18+ and Next.js environments
+
+// --- Import Font Files (Webpack will inline these as Base64) ---
+import arimoRegularWoff2 from '@/assets/fonts/arimo-latin-400-normal.woff2';
+import arimoBoldWoff2 from '@/assets/fonts/arimo-latin-700-normal.woff2';
+import interRegularWoff2 from '@/assets/fonts/inter-latin-400-normal.woff2';
+import interBoldWoff2 from '@/assets/fonts/inter-latin-700-normal.woff2';
+import tinosRegularWoff2 from '@/assets/fonts/tinos-latin-400-normal.woff2';
+import tinosBoldWoff2 from '@/assets/fonts/tinos-latin-700-normal.woff2';
+import cousineRegularWoff2 from '@/assets/fonts/cousine-latin-400-normal.woff2';
+import cousineBoldWoff2 from '@/assets/fonts/cousine-latin-700-normal.woff2';
+// --- End Font Imports ---
 
 // Configure route segment for longer processing
 export const maxDuration = 300; // 300 seconds timeout (Adjust as needed/allowed by plan)
@@ -120,42 +130,31 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
     let browser: Browser | null = null;
     let page: Page | null = null;
 
-    // --- Font Loading Logic (Reading from public/fonts and Base64 embedding) ---
+    // --- Font Loading Logic (Using imported Base64 data) ---
     const fontsToEmbed = [
-        { family: 'Arimo', weight: '400', style: 'normal', filename: 'arimo-latin-400-normal.woff2' },
-        { family: 'Arimo', weight: '700', style: 'normal', filename: 'arimo-latin-700-normal.woff2' },
-        { family: 'Inter', weight: '400', style: 'normal', filename: 'inter-latin-400-normal.woff2' },
-        { family: 'Inter', weight: '700', style: 'normal', filename: 'inter-latin-700-normal.woff2' },
-        { family: 'Tinos', weight: '400', style: 'normal', filename: 'tinos-latin-400-normal.woff2' },
-        { family: 'Tinos', weight: '700', style: 'normal', filename: 'tinos-latin-700-normal.woff2' },
-        { family: 'Cousine', weight: '400', style: 'normal', filename: 'cousine-latin-400-normal.woff2' },
-        { family: 'Cousine', weight: '700', style: 'normal', filename: 'cousine-latin-700-normal.woff2' },
-        // Add any other fonts from public/fonts here
+        { family: 'Arimo', weight: '400', style: 'normal', base64Src: arimoRegularWoff2 },
+        { family: 'Arimo', weight: '700', style: 'normal', base64Src: arimoBoldWoff2 },
+        { family: 'Inter', weight: '400', style: 'normal', base64Src: interRegularWoff2 },
+        { family: 'Inter', weight: '700', style: 'normal', base64Src: interBoldWoff2 },
+        { family: 'Tinos', weight: '400', style: 'normal', base64Src: tinosRegularWoff2 },
+        { family: 'Tinos', weight: '700', style: 'normal', base64Src: tinosBoldWoff2 },
+        { family: 'Cousine', weight: '400', style: 'normal', base64Src: cousineRegularWoff2 },
+        { family: 'Cousine', weight: '700', style: 'normal', base64Src: cousineBoldWoff2 },
+        // Add any other fonts you import here
     ];
 
     let embeddedFontStyles = '';
     for (const font of fontsToEmbed) {
-        try {
-            // Construct path relative to project root (reading from src/assets/fonts)
-            const fontPath = path.resolve(process.cwd(), 'src', 'assets', 'fonts', font.filename);
-            if (fs.existsSync(fontPath)) {
-                const fontBuffer = fs.readFileSync(fontPath);
-                const base64Font = fontBuffer.toString('base64');
-                embeddedFontStyles += `
-                    @font-face {
-                        font-family: '${font.family}';
-                        font-style: ${font.style};
-                        font-weight: ${font.weight};
-                        font-display: block; /* or swap */
-                        src: url(data:font/woff2;base64,${base64Font}) format('woff2');
-                    }
-                `;
-            } else {
-                console.warn(`Font file not found in src/assets/fonts: ${fontPath}`);
+        // The imported variable (e.g., arimoRegularWoff2) IS the Base64 data URL
+        embeddedFontStyles += `
+            @font-face {
+                font-family: '${font.family}';
+                font-style: ${font.style};
+                font-weight: ${font.weight};
+                font-display: block; /* or swap */
+                src: url(${font.base64Src}) format('woff2');
             }
-        } catch (error) {
-            console.error(`Error loading font ${font.family} ${font.weight} (${font.filename}):`, error);
-        }
+        `;
     }
     // --- End Font Loading Logic ---
 
