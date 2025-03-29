@@ -312,6 +312,69 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                         ctx.fill();
                                       }
                                     }
+                                  } else if (layer.effect === 'lines') {
+                                    // Draw diagonal lines pattern
+                                    ctx.beginPath();
+                                    for (let i = 0; i < layer.width + layer.height; i += patternSize) {
+                                      // Start point - either on the top edge or left edge
+                                      const startX = i <= layer.height ? layer.x : layer.x + i - layer.height;
+                                      const startY = i <= layer.height ? layer.y + i : layer.y + layer.height;
+                                      
+                                      // End point - either on the right edge or bottom edge
+                                      const endX = i <= layer.width ? layer.x + i : layer.x + layer.width;
+                                      const endY = i <= layer.width ? layer.y : layer.y + i - layer.width;
+                                      
+                                      ctx.moveTo(startX, startY);
+                                      ctx.lineTo(endX, endY);
+                                    }
+                                    ctx.lineWidth = 2;
+                                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                                    ctx.stroke();
+                                  } else if (layer.effect === 'waves') {
+                                    // Draw wave pattern
+                                    ctx.beginPath();
+                                    const waveHeight = patternSize / 4;
+                                    for (let y = layer.y; y < layer.y + layer.height; y += patternSize) {
+                                      for (let x = layer.x; x < layer.x + layer.width; x += patternSize) {
+                                        if (x + patternSize <= layer.x + layer.width) {
+                                          ctx.moveTo(x, y + patternSize/2);
+                                          ctx.quadraticCurveTo(
+                                            x + patternSize/4, y + patternSize/2 - waveHeight,
+                                            x + patternSize/2, y + patternSize/2
+                                          );
+                                          ctx.quadraticCurveTo(
+                                            x + 3*patternSize/4, y + patternSize/2 + waveHeight,
+                                            x + patternSize, y + patternSize/2
+                                          );
+                                        }
+                                      }
+                                    }
+                                    ctx.lineWidth = 2;
+                                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                                    ctx.stroke();
+                                  } else if (layer.effect === 'grid') {
+                                    // Draw grid pattern
+                                    ctx.beginPath();
+                                    
+                                    // Vertical lines
+                                    for (let x = layer.x; x <= layer.x + layer.width; x += patternSize) {
+                                      if (x >= layer.x && x <= layer.x + layer.width) {
+                                        ctx.moveTo(x, layer.y);
+                                        ctx.lineTo(x, layer.y + layer.height);
+                                      }
+                                    }
+                                    
+                                    // Horizontal lines
+                                    for (let y = layer.y; y <= layer.y + layer.height; y += patternSize) {
+                                      if (y >= layer.y && y <= layer.y + layer.height) {
+                                        ctx.moveTo(layer.x, y);
+                                        ctx.lineTo(layer.x + layer.width, y);
+                                      }
+                                    }
+                                    
+                                    ctx.lineWidth = 1;
+                                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                                    ctx.stroke();
                                   }
                                   // Additional patterns would be implemented here
                                 }
@@ -388,8 +451,35 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                ctx.fillStyle = layer.color || '#000000';
                              }
                              
-                             // Draw the text
-                             ctx.fillText(layer.text, textX, layer.y + layer.size);
+                             // Improved text rendering with proper word wrapping
+                             const words = layer.text.split(' ');
+                             let line = '';
+                             let lineY = layer.y;
+                             const lineHeight = layer.size * 1.2; // Approximate line height
+                             
+                             for (let i = 0; i < words.length; i++) {
+                               const testLine = line + words[i] + ' ';
+                               const metrics = ctx.measureText(testLine);
+                               
+                               if (metrics.width > layer.width && i > 0) {
+                                 // Draw current line and move to next line
+                                 ctx.fillText(line, textX, lineY + layer.size);
+                                 line = words[i] + ' ';
+                                 lineY += lineHeight;
+                                 
+                                 // Check if we've exceeded the height
+                                 if (lineY + lineHeight > layer.y + layer.height) {
+                                   break; // Stop rendering text if it exceeds the container height
+                                 }
+                               } else {
+                                 line = testLine;
+                               }
+                             }
+                             
+                             // Draw the last line only if it fits
+                             if (lineY + lineHeight <= layer.y + layer.height) {
+                               ctx.fillText(line, textX, lineY + layer.size);
+                             }
                              break;
                          case 'shape':
                              // Draw shape layer

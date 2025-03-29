@@ -309,13 +309,20 @@ export const exportSvgToPng = async (
             
             switch(effect) {
               case 'dots':
-                // Draw dots - match API implementation
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-                for (let x = layer.x + 5; x < layer.x + layer.width; x += patternSize) {
-                  for (let y = layer.y + 5; y < layer.y + layer.height; y += patternSize) {
-                    ctx.beginPath();
-                    ctx.arc(x, y, 2, 0, Math.PI * 2);
-                    ctx.fill();
+                // Draw dots
+                const dotRadius = patternSize / 6;
+                // Loop through the grid of potential dot positions
+                for (let x = layer.x + patternSize/2; x < layer.x + layer.width; x += patternSize) {
+                  for (let y = layer.y + patternSize/2; y < layer.y + layer.height; y += patternSize) {
+                    // Ensure the dot (including its radius) stays within the layer boundaries
+                    if (x - dotRadius >= layer.x && 
+                        x + dotRadius <= layer.x + layer.width && 
+                        y - dotRadius >= layer.y && 
+                        y + dotRadius <= layer.y + layer.height) {
+                      ctx.beginPath();
+                      ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+                      ctx.fill();
+                    }
                   }
                 }
                 break;
@@ -593,8 +600,10 @@ export const exportSvgToPng = async (
           }
         }
         
-        // Draw the last line
-        ctx.fillText(line, textX, lineY + txtLayer.size);
+        // Draw the last line (only if it fits within boundaries)
+        if (lineY + lineHeight <= layer.y + layer.height) {
+          ctx.fillText(line, textX, lineY + txtLayer.size);
+        }
         
         // Draw border if set
         if (layer.borderWidth > 0) {
@@ -710,9 +719,6 @@ export const exportSvgToPng = async (
               ctx.textAlign = 'left';
             }
             
-            // Draw a single line of text with proper baseline for consistency with API
-            ctx.fillText(textContent, textX, y + fontSize);
-            
             // Handle multi-line text with proper positioning
             const words = textContent.split(' ');
             let line = '';
@@ -733,8 +739,12 @@ export const exportSvgToPng = async (
               }
             }
             
-            // Draw the last line
-            ctx.fillText(line, textX, lineY + fontSize);
+            // Draw the last line (only if it fits within boundaries)
+            const foHeight = parseFloat(fo.getAttribute('height') || '0');
+            if (lineY + lineHeight <= y + foHeight) {
+              ctx.fillText(line, textX, lineY + fontSize);
+            }
+            
             ctx.globalAlpha = 1;
           } catch (error) {
             console.warn('Error extracting text style:', error);
@@ -948,8 +958,7 @@ export const exportSvgToPng = async (
             ctx.textAlign = 'left';
           }
           
-          // Position text with baseline adjustment to match API rendering
-          ctx.fillText(textContent, xPos, y + fontSize);
+          ctx.fillText(textContent, xPos, y);
           ctx.globalAlpha = 1;
         }
       });
