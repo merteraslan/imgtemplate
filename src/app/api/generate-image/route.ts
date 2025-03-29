@@ -138,10 +138,14 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
         try {
             // Construct path relative to project root (cwd) -> src/assets/fonts/FONT_FAMILY/files/FONT_FILENAME
             const fontPath = path.join(process.cwd(), 'src', 'assets', 'fonts', font.family.toLowerCase(), 'files', font.fileName);
-            
-            if (fs.existsSync(fontPath)) {
+            console.log(`[Font Check] Trying path: ${fontPath}`); // Log the path
+            const exists = fs.existsSync(fontPath);
+            console.log(`[Font Check] Exists? ${exists}`); // Log existence check
+
+            if (exists) {
                 const fontBuffer = fs.readFileSync(fontPath);
                 const base64Font = fontBuffer.toString('base64');
+                console.log(`[Font Check] Read ${font.fileName}, Base64 starts with: ${base64Font.substring(0, 50)}...`); // Log Base64 snippet
                 embeddedFontStyles += `
                     @font-face {
                         font-family: '${font.family}';
