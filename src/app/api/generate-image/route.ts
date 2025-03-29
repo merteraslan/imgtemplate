@@ -620,20 +620,64 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
 
                 return canvas.toDataURL('image/png');
             }
-            window.renderResult = renderTemplate(${JSON.stringify(templateData)}); // Pass data with dataURLs
+            
+            // Create a global promise that will resolve with the rendering result
+            window.renderComplete = false;
+            window.renderResult = undefined;
+            
+            // Parse the template data
+            const templateData = ${JSON.stringify(templateData)};
+            
+            // Start the rendering process and store the result
+            renderTemplate(templateData).then(dataUrl => {
+                window.renderResult = dataUrl;
+                window.renderComplete = true;
+            }).catch(error => {
+                console.error('Rendering failed:', error);
+                window.renderError = error.message;
+                window.renderComplete = true;
+            });
         `;
         // --- END SIMPLIFIED Rendering Script ---
 
         await page.addScriptTag({ content: renderingScript });
-        // Use a proper type cast approach for evaluating window properties
-        const imageDataUrl = await page.evaluate(() => {
-            // Cast to unknown first, then to the desired type
-            return (window as unknown as { renderResult: string }).renderResult;
-        }, { timeout: 90000 }); // Generous evaluate timeout
-
-        if (!imageDataUrl || typeof imageDataUrl !== 'string') throw new Error('Invalid data URL returned');
+        
+        // Define an interface for the window object with our custom properties
+        interface RenderWindow extends Window {
+            renderComplete: boolean;
+            renderResult: string | undefined;
+            renderError: string | undefined;
+        }
+        
+        // Wait for rendering to complete with proper type assertion
+        await page.waitForFunction(() => (window as unknown as RenderWindow).renderComplete === true, { timeout: 60000 });
+        
+        // Get the result with proper type interfaces
+        interface RenderResult {
+            result: string | undefined;
+            error: string | undefined;
+        }
+        
+        const renderResult = await page.evaluate(() => {
+            return {
+                result: (window as unknown as RenderWindow).renderResult,
+                error: (window as unknown as RenderWindow).renderError
+            } as RenderResult;
+        });
+        
+        if (renderResult.error) {
+            throw new Error(`Browser rendering error: ${renderResult.error}`);
+        }
+        
+        const imageDataUrl = renderResult.result;
+        if (!imageDataUrl || typeof imageDataUrl !== 'string') {
+            throw new Error('Invalid data URL returned');
+        }
+        
         const base64Data = imageDataUrl.split(',')[1];
-        if (!base64Data) throw new Error('Failed to extract base64 data');
+        if (!base64Data) {
+            throw new Error('Failed to extract base64 data');
+        }
 
         console.timeEnd('puppeteerRender');
         return Buffer.from(base64Data, 'base64');
