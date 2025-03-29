@@ -181,25 +181,37 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
           <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
           <!-- Add Impact font and other display fonts -->
           <style>
+            /* You might still keep Impact / Arial Black local if needed, or add them via Fontsource/public */
             @font-face {
               font-family: 'Impact';
-              src: local('Impact');
+              src: local('Impact'); /* Assuming Impact is often installed */
               font-display: block;
             }
             
             /* Backup for Impact */
             @font-face {
               font-family: 'Arial Black';
-              src: local('Arial Black');
+              src: local('Arial Black'); /* Assuming Arial Black is often installed */
               font-display: block;
             }
             
-            /* Add additional fonts that might be used in the template */
-            @font-face {
-              font-family: 'Verdana';
-              src: local('Verdana');
-              font-display: block;
-            }
+            /* Add @font-face rules here if loading from /fonts/ directly */
+            /* Example: */
+            /* @font-face { */
+            /*   font-family: 'Arimo'; */
+            /*   src: url('/fonts/arimo-latin-400-normal.woff2') format('woff2'); */
+            /*   font-weight: 400; */
+            /*   font-style: normal; */
+            /*   font-display: block; */
+            /* } */
+            /* @font-face { */
+            /*   font-family: 'Arimo'; */
+            /*   src: url('/fonts/arimo-latin-700-normal.woff2') format('woff2'); */
+            /*   font-weight: 700; */
+            /*   font-style: normal; */
+            /*   font-display: block; */
+            /* } */
+            /* ... etc. for Inter, Tinos, Cousine ... */
           </style>
         </head>
         <body>
@@ -383,9 +395,10 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                     ctx.stroke();
                                   } else if (layer.effect === 'waves') {
                                     // Draw wave pattern
-                                    ctx.beginPath();
+                                    ctx.lineWidth = 2; // Set line width before loop
                                     const waveHeight = patternSize / 4;
                                     for (let y = layer.y; y < layer.y + layer.height; y += patternSize) {
+                                      ctx.beginPath(); // Start path for each row
                                       for (let x = layer.x; x < layer.x + layer.width; x += patternSize) {
                                         if (x + patternSize <= layer.x + layer.width) {
                                           ctx.moveTo(x, y + patternSize/2);
@@ -399,9 +412,8 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                                           );
                                         }
                                       }
+                                      ctx.stroke(); // Stroke each row individually
                                     }
-                                    ctx.lineWidth = 2;
-                                    ctx.stroke();
                                   } else if (layer.effect === 'grid') {
                                     // Draw grid pattern
                                     ctx.beginPath();
@@ -481,77 +493,84 @@ async function renderImageFromJSON(templateData: TemplateData): Promise<Buffer> 
                          case 'text':
                              // Draw text layer with better font handling
                              // Special case handling for Impact/display fonts
-                             const useBoldFont = layer.bold || (layer.font && layer.font.toLowerCase().includes('impact'));
+                             // Use explicit weight 700 for bold, default 400 otherwise
+                             const fontWeight = layer.bold ? '700 ' : '400 ';
                              const fontStyle = layer.italic ? 'italic ' : '';
-                             const fontWeight = useBoldFont ? 'bold ' : '';
                              const fontSize = layer.size + 'px';
-                             const fontFamily = layer.font || 'Arial';
+                             const fontFamily = layer.font || 'Arimo'; // Default to Arimo (Arial replacement)
                              
                              // Build full font string with fallbacks
-                             let fullFontFamily = '"' + fontFamily + '"';
-                             if (fontFamily.toLowerCase().includes('impact')) {
-                                fullFontFamily += ', "Arial Black", sans-serif';
-                             } else if (fontFamily.toLowerCase().includes('arial black')) {
-                                fullFontFamily += ', Impact, sans-serif';
-                             } else if (fontFamily.toLowerCase().includes('helvetica')) { // Add Helvetica fallback
-                                fullFontFamily += ', Arial, sans-serif';
-                             } else {
-                                fullFontFamily += ', sans-serif';
-                             }
-                             
-                             // Set complete font
-                             ctx.font = fontStyle + fontWeight + fontSize + ' ' + fullFontFamily;
-                             ctx.fillStyle = layer.color || '#000000';
-                             ctx.textAlign = layer.textAlign || 'left';
-                             
-                             // Calculate text position based on alignment
-                             let textX = layer.x;
-                             if (layer.textAlign === 'center') textX += layer.width / 2;
-                             else if (layer.textAlign === 'right') textX += layer.width;
-                             
-                             // Draw background if enabled
-                             if (layer.useBackground && layer.backgroundColor) {
-                               const padding = layer.bgPadding || 5;
-                               ctx.fillStyle = layer.backgroundColor;
-                               ctx.fillRect(
-                                 layer.x - padding, 
-                                 layer.y - padding, 
-                                 layer.width + (padding * 2), 
-                                 layer.height + (padding * 2)
-                               );
-                               ctx.fillStyle = layer.color || '#000000';
-                             }
-                             
-                             // Improved text rendering with proper word wrapping
-                             const words = layer.text.split(' ');
-                             let line = '';
-                             let lineY = layer.y;
-                             const lineHeight = layer.size * 1.2; // Approximate line height
-                             
-                             for (let i = 0; i < words.length; i++) {
-                               const testLine = line + words[i] + ' ';
-                               const metrics = ctx.measureText(testLine);
-                               
-                               if (metrics.width > layer.width && i > 0) {
-                                 // Draw current line and move to next line
-                                 ctx.fillText(line, textX, lineY);
-                                 line = words[i] + ' ';
-                                 lineY += lineHeight;
-                                 
-                                 // Check if we've exceeded the height
-                                 if (lineY + lineHeight > layer.y + layer.height) {
-                                   break; // Stop rendering text if it exceeds the container height
-                                 }
-                               } else {
-                                 line = testLine;
-                               }
-                             }
-                             
-                             // Draw the last line only if it fits
-                             if (lineY + lineHeight <= layer.y + layer.height) {
-                               ctx.fillText(line, textX, lineY);
-                             }
-                             break;
+                              let fullFontFamily = '"' + fontFamily + '"';
+                              if (fontFamily.toLowerCase().includes('impact')) {
+                                 fullFontFamily += ', "Arial Black", sans-serif';
+                              } else if (fontFamily.toLowerCase().includes('arial black')) {
+                                 fullFontFamily += ', Impact, sans-serif';
+                              } else if (fontFamily === 'Arimo' || fontFamily === 'Inter') {
+                                 // Basic sans-serif fallback
+                                 fullFontFamily += ', sans-serif';
+                              } else if (fontFamily === 'Tinos') {
+                                 // Basic serif fallback
+                                 fullFontFamily += ', serif';
+                              } else if (fontFamily === 'Cousine') {
+                                 // Basic monospace fallback
+                                 fullFontFamily += ', monospace';
+                              } else {
+                                 fullFontFamily += ', sans-serif';
+                              }
+                              
+                              // Set complete font
+                              ctx.font = fontStyle + fontWeight + fontSize + ' ' + fullFontFamily;
+                              ctx.fillStyle = layer.color || '#000000';
+                              ctx.textAlign = layer.textAlign || 'left';
+                              
+                              // Calculate text position based on alignment
+                              let textX = layer.x;
+                              if (layer.textAlign === 'center') textX += layer.width / 2;
+                              else if (layer.textAlign === 'right') textX += layer.width;
+                              
+                              // Draw background if enabled
+                              if (layer.useBackground && layer.backgroundColor) {
+                                const padding = layer.bgPadding || 5;
+                                ctx.fillStyle = layer.backgroundColor;
+                                ctx.fillRect(
+                                  layer.x - padding, 
+                                  layer.y - padding, 
+                                  layer.width + (padding * 2), 
+                                  layer.height + (padding * 2)
+                                );
+                                ctx.fillStyle = layer.color || '#000000';
+                              }
+                              
+                              // Improved text rendering with proper word wrapping
+                              const words = layer.text.split(' ');
+                              let line = '';
+                              let lineY = layer.y;
+                              const lineHeight = layer.size * 1.2; // Approximate line height
+                              
+                              for (let i = 0; i < words.length; i++) {
+                                const testLine = line + words[i] + ' ';
+                                const metrics = ctx.measureText(testLine);
+                                
+                                if (metrics.width > layer.width && i > 0) {
+                                  // Draw current line and move to next line
+                                  ctx.fillText(line, textX, lineY);
+                                  line = words[i] + ' ';
+                                  lineY += lineHeight;
+                                  
+                                  // Check if we've exceeded the height
+                                  if (lineY + lineHeight > layer.y + layer.height) {
+                                    break; // Stop rendering text if it exceeds the container height
+                                  }
+                                } else {
+                                  line = testLine;
+                                }
+                              }
+                              
+                              // Draw the last line only if it fits
+                              if (lineY + lineHeight <= layer.y + layer.height) {
+                                ctx.fillText(line, textX, lineY);
+                              }
+                              break;
                          case 'shape':
                              // Draw shape layer
                              ctx.fillStyle = layer.fillColor || '#000000';

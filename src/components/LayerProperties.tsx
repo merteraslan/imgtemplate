@@ -150,11 +150,10 @@ const LayerProperties: React.FC<LayerPropertiesProps> = ({
               aria-label="Layer font"
               className="mt-1 block w-full border-gray-300 rounded-md"
             >
-              <option value="Arial">Arial</option>
-              <option value="Helvetica">Helvetica</option>
-              <option value="Times New Roman">Times New Roman</option>
-              <option value="Courier New">Courier New</option>
-              <option value="Verdana">Verdana</option>
+              <option value="Arimo">Arimo (Arial)</option>
+              <option value="Inter">Inter (Helvetica)</option>
+              <option value="Tinos">Tinos (Times New Roman)</option>
+              <option value="Cousine">Cousine (Courier New)</option>
             </select>
           </div>
           <div className="mb-2">
