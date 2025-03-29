@@ -717,7 +717,10 @@ export const exportSvgToPng = async (
               ctx.textAlign = 'left';
             }
             
-            // Handle multi-line text
+            // Draw a single line of text with proper baseline for consistency with API
+            ctx.fillText(textContent, textX, y + fontSize);
+            
+            // Handle multi-line text with proper positioning
             const words = textContent.split(' ');
             let line = '';
             let lineY = y;
@@ -729,7 +732,7 @@ export const exportSvgToPng = async (
               
               if (metrics.width > foWidth && i > 0) {
                 // Draw current line and move to next line
-                ctx.fillText(line, textX, lineY);
+                ctx.fillText(line, textX, lineY + fontSize);
                 line = words[i] + ' ';
                 lineY += lineHeight;
               } else {
@@ -738,7 +741,7 @@ export const exportSvgToPng = async (
             }
             
             // Draw the last line
-            ctx.fillText(line, textX, lineY);
+            ctx.fillText(line, textX, lineY + fontSize);
             ctx.globalAlpha = 1;
           } catch (error) {
             console.warn('Error extracting text style:', error);
@@ -756,10 +759,90 @@ export const exportSvgToPng = async (
         const href = img.getAttribute('href');
         const opacity = parseFloat(img.getAttribute('opacity') || '1');
         
-        if (href && !href.includes('[Image:') && imgWidth > 0 && imgHeight > 0) {
+        // Get additional attributes like effect
+        const parentG = img.closest('g');
+        const effect = parentG?.getAttribute('data-effect') || 'none';
+        const useFill = parentG?.getAttribute('data-color-fill') === 'true';
+        const fillColor = parentG?.getAttribute('data-fill-color') || '#cccccc';
+        const cornerRadius = parseFloat(parentG?.getAttribute('data-corner-radius') || '0');
+        
+        if (useFill) {
+          // Draw color fill
+          ctx.globalAlpha = opacity;
+          ctx.fillStyle = fillColor;
+          
+          if (cornerRadius > 0) {
+            // Create rounded rectangle
+            ctx.save();
+            // Helper function to create rounded rectangle clipping path
+            const r = cornerRadius;
+            
+            // Create rounded rectangle path
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + imgWidth - r, y);
+            ctx.arcTo(x + imgWidth, y, x + imgWidth, y + r, r);
+            ctx.lineTo(x + imgWidth, y + imgHeight - r);
+            ctx.arcTo(x + imgWidth, y + imgHeight, x + imgWidth - r, y + imgHeight, r);
+            ctx.lineTo(x + r, y + imgHeight);
+            ctx.arcTo(x, y + imgHeight, x, y + imgHeight - r, r);
+            ctx.lineTo(x, y + r);
+            ctx.arcTo(x, y, x + r, y, r);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          } else {
+            ctx.fillRect(x, y, imgWidth, imgHeight);
+          }
+          
+          // Handle pattern effects
+          if (effect && effect !== 'none') {
+            // Draw patterns based on effect type
+            const patternSize = 20;
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.lineWidth = 1;
+            
+            if (effect === 'dots') {
+              // Draw dot pattern
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+              for (let dotX = x + 5; dotX < x + imgWidth; dotX += patternSize) {
+                for (let dotY = y + 5; dotY < y + imgHeight; dotY += patternSize) {
+                  ctx.beginPath();
+                  ctx.arc(dotX, dotY, 2, 0, Math.PI * 2);
+                  ctx.fill();
+                }
+              }
+            }
+            // Additional patterns can be implemented here
+          }
+        } else if (href && !href.includes('[Image:') && imgWidth > 0 && imgHeight > 0) {
           try {
             ctx.globalAlpha = opacity;
-            await drawImageToCanvas(ctx, href, x, y, imgWidth, imgHeight);
+            
+            if (cornerRadius > 0) {
+              ctx.save();
+              // Create rounded rectangle clip path
+              const r = cornerRadius;
+              
+              ctx.beginPath();
+              ctx.moveTo(x + r, y);
+              ctx.lineTo(x + imgWidth - r, y);
+              ctx.arcTo(x + imgWidth, y, x + imgWidth, y + r, r);
+              ctx.lineTo(x + imgWidth, y + imgHeight - r);
+              ctx.arcTo(x + imgWidth, y + imgHeight, x + imgWidth - r, y + imgHeight, r);
+              ctx.lineTo(x + r, y + imgHeight);
+              ctx.arcTo(x, y + imgHeight, x, y + imgHeight - r, r);
+              ctx.lineTo(x, y + r);
+              ctx.arcTo(x, y, x + r, y, r);
+              ctx.closePath();
+              ctx.clip();
+              
+              await drawImageToCanvas(ctx, href, x, y, imgWidth, imgHeight);
+              ctx.restore();
+            } else {
+              await drawImageToCanvas(ctx, href, x, y, imgWidth, imgHeight);
+            }
+            
             ctx.globalAlpha = 1;
           } catch (error) {
             console.warn(`Failed to draw image at ${x},${y}`, error);
@@ -771,6 +854,38 @@ export const exportSvgToPng = async (
           // Draw a placeholder for missing images
           ctx.fillStyle = '#cccccc';
           ctx.fillRect(x, y, imgWidth, imgHeight);
+        }
+        
+        // Draw border if specified
+        const borderWidth = parseFloat(parentG?.getAttribute('data-border-width') || '0');
+        const borderColor = parentG?.getAttribute('data-border-color') || '#000000';
+        
+        if (borderWidth > 0) {
+          ctx.globalAlpha = opacity;
+          ctx.strokeStyle = borderColor;
+          ctx.lineWidth = borderWidth;
+          
+          if (cornerRadius > 0) {
+            // Draw rounded rectangle border
+            const r = cornerRadius;
+            
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + imgWidth - r, y);
+            ctx.arcTo(x + imgWidth, y, x + imgWidth, y + r, r);
+            ctx.lineTo(x + imgWidth, y + imgHeight - r);
+            ctx.arcTo(x + imgWidth, y + imgHeight, x + imgWidth - r, y + imgHeight, r);
+            ctx.lineTo(x + r, y + imgHeight);
+            ctx.arcTo(x, y + imgHeight, x, y + imgHeight - r, r);
+            ctx.lineTo(x, y + r);
+            ctx.arcTo(x, y, x + r, y, r);
+            ctx.closePath();
+            ctx.stroke();
+          } else {
+            ctx.strokeRect(x, y, imgWidth, imgHeight);
+          }
+          
+          ctx.globalAlpha = 1;
         }
       }
       
@@ -805,7 +920,8 @@ export const exportSvgToPng = async (
           ctx.textAlign = 'left';
         }
         
-        ctx.fillText(textContent, xPos, y);
+        // Position text with baseline adjustment to match API rendering
+        ctx.fillText(textContent, xPos, y + fontSize);
         ctx.globalAlpha = 1;
       });
       
