@@ -309,20 +309,13 @@ export const exportSvgToPng = async (
             
             switch(effect) {
               case 'dots':
-                // Draw dots
-                const dotRadius = patternSize / 6;
-                // Loop through the grid of potential dot positions
-                for (let x = layer.x + patternSize/2; x < layer.x + layer.width; x += patternSize) {
-                  for (let y = layer.y + patternSize/2; y < layer.y + layer.height; y += patternSize) {
-                    // Ensure the dot (including its radius) stays within the layer boundaries
-                    if (x - dotRadius >= layer.x && 
-                        x + dotRadius <= layer.x + layer.width && 
-                        y - dotRadius >= layer.y && 
-                        y + dotRadius <= layer.y + layer.height) {
-                      ctx.beginPath();
-                      ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
-                      ctx.fill();
-                    }
+                // Draw dots - match API implementation
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                for (let x = layer.x + 5; x < layer.x + layer.width; x += patternSize) {
+                  for (let y = layer.y + 5; y < layer.y + layer.height; y += patternSize) {
+                    ctx.beginPath();
+                    ctx.arc(x, y, 2, 0, Math.PI * 2);
+                    ctx.fill();
                   }
                 }
                 break;
@@ -592,7 +585,7 @@ export const exportSvgToPng = async (
           
           if (metrics.width > layer.width && i > 0) {
             // Draw current line and move to next line
-            ctx.fillText(line, textX, lineY);
+            ctx.fillText(line, textX, lineY + txtLayer.size);
             line = words[i] + ' ';
             lineY += lineHeight;
           } else {
@@ -601,7 +594,7 @@ export const exportSvgToPng = async (
         }
         
         // Draw the last line
-        ctx.fillText(line, textX, lineY);
+        ctx.fillText(line, textX, lineY + txtLayer.size);
         
         // Draw border if set
         if (layer.borderWidth > 0) {
@@ -955,7 +948,8 @@ export const exportSvgToPng = async (
             ctx.textAlign = 'left';
           }
           
-          ctx.fillText(textContent, xPos, y);
+          // Position text with baseline adjustment to match API rendering
+          ctx.fillText(textContent, xPos, y + fontSize);
           ctx.globalAlpha = 1;
         }
       });
